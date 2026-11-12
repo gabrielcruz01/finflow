@@ -1,0 +1,238 @@
+/* ==========================================================================
+   Controle Financeiro Pessoal - Estilos Finos & Customizações UI/UX
+   Foco em: Dark Mode Moderno, Baixa Fricção, Ergonomia Mobile-First
+   ========================================================================== */
+
+/* Configurações Globais & Tipografia */
+:root {
+  --color-bg-primary: #0f172a;   /* Slate 900 */
+  --color-bg-card: #1e293b;      /* Slate 800 */
+  --color-border: #334155;       /* Slate 700 */
+  --color-border-subtle: #1e293b;
+  --color-accent-emerald: #10b981;
+  --color-accent-rose: #f43f5e;
+  --color-accent-amber: #f59e0b;
+  --color-accent-indigo: #6366f1;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background-color: var(--color-bg-primary);
+  color: #f8fafc;
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Transições Suaves */
+.transition-smooth {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Efeito de Vidro Sutil (Glassmorphism) */
+.glass-panel {
+  background: rgba(30, 41, 59, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Inputs e Seletores */
+input[type="text"],
+input[type="number"],
+input[type="date"],
+select {
+  color-scheme: dark;
+}
+
+input:focus,
+select:focus,
+button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #6366f1, 0 0 0 4px rgba(99, 102, 241, 0.2);
+}
+
+/* Toggle Switch de 1-Clique para Contas */
+.bill-toggle-checkbox:checked + .bill-toggle-track {
+  background-color: #10b981;
+}
+
+.bill-toggle-checkbox:checked + .bill-toggle-track .bill-toggle-thumb {
+  transform: translateX(1.25rem);
+}
+
+/* Animações de Toasts */
+@keyframes toastSlideIn {
+  from {
+    transform: translateY(100%) scale(0.95);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes toastFadeOut {
+  from {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(20px) scale(0.95);
+    opacity: 0;
+  }
+}
+
+.toast-item {
+  animation: toastSlideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.toast-item.removing {
+  animation: toastFadeOut 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Animações de Modal e Banners */
+@keyframes modalBackdropFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modalContentPopIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeInScale 0.25s ease-out forwards;
+}
+
+.modal-backdrop-animate {
+  animation: modalBackdropFadeIn 0.2s ease-out forwards;
+}
+
+.modal-content-animate {
+  animation: modalContentPopIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Otimização Touch e Mobile ergonomics */
+.tap-target {
+  min-height: 44px;
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Safe areas para celulares com entalhes (Notch / Home bar) */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 1rem);
+}
+
+/* Badges e Status Indicators */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+.status-pill-paid {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.status-pill-soon {
+  background-color: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.status-pill-overdue {
+  background-color: rgba(244, 63, 94, 0.15);
+  color: #fb7185;
+  border: 1px solid rgba(244, 63, 94, 0.3);
+}
+
+.status-pill-pending {
+  background-color: rgba(100, 116, 139, 0.15);
+  color: #94a3b8;
+  border: 1px solid rgba(100, 116, 139, 0.3);
+}
+
+/* Listagem & Empty States */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1.5rem;
+  color: #64748b;
+  text-align: center;
+}
+
+/* Botões de Ação de Linhas (Editar/Excluir) */
+.action-icon-btn {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  transition: all 0.15s ease;
+}
+
+/* Efeito pulsante suave para alertas */
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.pulse-badge {
+  animation: pulse-subtle 2s infinite ease-in-out;
+}
