@@ -210,13 +210,24 @@
     /**
      * Calcula o status da conta a pagar
      */
-    calculateBillStatus(dueDateISO, isPaid) {
+    calculateBillStatus(dueDateISO, isPaid, soonDays = 3) {
       if (isPaid) {
         return {
           label: 'Pago',
           cssClass: 'status-pill-paid',
           dotColor: 'bg-emerald-400',
-          key: 'paid'
+          key: 'paid',
+          diffDays: 0
+        };
+      }
+
+      if (!dueDateISO || typeof dueDateISO !== 'string' || !dueDateISO.includes('-')) {
+        return {
+          label: 'Pendente',
+          cssClass: 'status-pill-pending',
+          dotColor: 'bg-slate-400',
+          key: 'pending',
+          diffDays: 999
         };
       }
 
@@ -228,30 +239,69 @@
       due.setHours(0, 0, 0, 0);
 
       const diffTime = due.getTime() - today.getTime();
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+      const parsedDays = Number(soonDays);
+      const threshold = (Number.isFinite(parsedDays) && parsedDays >= 0) ? parsedDays : 3;
 
       if (diffDays < 0) {
+        const overdueDays = Math.abs(diffDays);
         return {
-          label: 'Atrasado',
+          label: overdueDays === 1 ? 'Atrasado (1d)' : `Atrasado (${overdueDays}d)`,
           cssClass: 'status-pill-overdue',
           dotColor: 'bg-rose-500',
-          key: 'overdue'
+          key: 'overdue',
+          diffDays
         };
-      } else if (diffDays <= 3) {
+      } else if (diffDays <= threshold) {
+        const soonLabel = diffDays === 0
+          ? 'Vence Hoje'
+          : (diffDays === 1 ? 'Vence amanhã' : `Vence em ${diffDays}d`);
         return {
-          label: diffDays === 0 ? 'Vence Hoje' : 'Vence em breve',
+          label: soonLabel,
           cssClass: 'status-pill-soon',
           dotColor: 'bg-amber-400',
-          key: 'soon'
+          key: 'soon',
+          diffDays
         };
       } else {
         return {
           label: 'Pendente',
           cssClass: 'status-pill-pending',
           dotColor: 'bg-slate-400',
-          key: 'pending'
+          key: 'pending',
+          diffDays
         };
       }
+    },
+
+    normalizeAlertSettings(raw) {
+      const source = (raw && typeof raw === 'object') ? raw : {};
+      const allowedDays = [0, 1, 3, 5, 7];
+      const parsedDays = Number(source.daysBefore);
+      const daysBefore = allowedDays.includes(parsedDays) ? parsedDays : 3;
+      const whatsappPhone = typeof source.whatsappPhone === 'string'
+        ? source.whatsappPhone.replace(/\D/g, '').slice(0, 15)
+        : '';
+
+      return {
+        enabled: typeof source.enabled === 'boolean' ? source.enabled : true,
+        daysBefore,
+        whatsappEnabled: typeof source.whatsappEnabled === 'boolean' ? source.whatsappEnabled : true,
+        whatsappPhone,
+        browserNotify: typeof source.browserNotify === 'boolean' ? source.browserNotify : false,
+        lastNotifiedDate: typeof source.lastNotifiedDate === 'string' ? source.lastNotifiedDate : null,
+        dismissedDate: typeof source.dismissedDate === 'string' ? source.dismissedDate : null
+      };
+    },
+
+    formatWhatsappPhone(rawPhone) {
+      const digits = String(rawPhone || '').replace(/\D/g, '');
+      if (!digits) return '';
+      const cleaned = (digits.length === 12 && digits.startsWith('0')) ? digits.slice(1) : digits;
+      if (cleaned.length === 10 || cleaned.length === 11) {
+        return `55${cleaned}`;
+      }
+      return cleaned;
     }
   };
 
@@ -360,6 +410,7 @@
           'Transporte': 350.00,
           'Lazer': 250.00
         },
+        alertSettings: Utils.normalizeAlertSettings(),
         bills: [
           {
             id: Utils.generateUUID(),
@@ -457,6 +508,7 @@
         if (!parsed.incomes || typeof parsed.incomes !== 'object') {
           parsed.incomes = {};
         }
+        parsed.alertSettings = Utils.normalizeAlertSettings(parsed.alertSettings);
 
         return parsed;
       } catch (err) {
@@ -688,6 +740,36 @@
       this.exportDataBtn = document.getElementById('exportDataBtn');
       this.importDataBtn = document.getElementById('importDataBtn');
       this.importFileInput = document.getElementById('importFileInput');
+
+      // Alertas & WhatsApp
+      this.openAlertModalBtn = document.getElementById('openAlertModalBtn');
+      this.headerAlertBadge = document.getElementById('headerAlertBadge');
+      this.mobileAlertBtn = document.getElementById('mobileAlertBtn');
+      this.mobileAlertBadge = document.getElementById('mobileAlertBadge');
+      this.openAlertBillsBtn = document.getElementById('openAlertBillsBtn');
+
+      this.dueAlertsBanner = document.getElementById('dueAlertsBanner');
+      this.alertsBannerIconWrap = document.getElementById('alertsBannerIconWrap');
+      this.alertsBannerIcon = document.getElementById('alertsBannerIcon');
+      this.alertsBannerTitle = document.getElementById('alertsBannerTitle');
+      this.alertsBannerBadges = document.getElementById('alertsBannerBadges');
+      this.alertsBannerSubtitle = document.getElementById('alertsBannerSubtitle');
+      this.alertsBannerList = document.getElementById('alertsBannerList');
+      this.sendAlertsWhatsappBtn = document.getElementById('sendAlertsWhatsappBtn');
+      this.openAlertsFromBannerBtn = document.getElementById('openAlertsFromBannerBtn');
+      this.dismissAlertsBannerBtn = document.getElementById('dismissAlertsBannerBtn');
+
+      this.alertModal = document.getElementById('alertModal');
+      this.alertForm = document.getElementById('alertForm');
+      this.alertEnabledToggle = document.getElementById('alertEnabledToggle');
+      this.alertOptionsGroup = document.getElementById('alertOptionsGroup');
+      this.alertDaysBeforeSelect = document.getElementById('alertDaysBeforeSelect');
+      this.alertBrowserNotifyToggle = document.getElementById('alertBrowserNotifyToggle');
+      this.whatsappEnabledToggle = document.getElementById('whatsappEnabledToggle');
+      this.whatsappOptionsGroup = document.getElementById('whatsappOptionsGroup');
+      this.whatsappPhoneInput = document.getElementById('whatsappPhoneInput');
+      this.alertModalSummaryBox = document.getElementById('alertModalSummaryBox');
+      this.testWhatsappAlertBtn = document.getElementById('testWhatsappAlertBtn');
     },
 
     bindEvents() {
@@ -751,6 +833,13 @@
       document.getElementById('openBudgetHeaderBtn')?.addEventListener('click', openBudget);
       document.getElementById('mobileBudgetBtn')?.addEventListener('click', openBudget);
 
+      // Alertas de Vencimento & WhatsApp Modal
+      const openAlerts = () => this.openAlertModal();
+      this.openAlertModalBtn?.addEventListener('click', openAlerts);
+      this.mobileAlertBtn?.addEventListener('click', openAlerts);
+      this.openAlertBillsBtn?.addEventListener('click', openAlerts);
+      this.openAlertsFromBannerBtn?.addEventListener('click', openAlerts);
+
       // 3. Modais - Fechamento
       document.querySelectorAll('[data-close-modal]').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -769,7 +858,7 @@
 
       window.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
-          [this.incomeModal, this.billModal, this.expenseModal, this.budgetModal].forEach(m => {
+          [this.incomeModal, this.billModal, this.expenseModal, this.budgetModal, this.alertModal].forEach(m => {
             if (m && !m.classList.contains('hidden')) this.closeModal(m);
           });
         }
@@ -780,6 +869,15 @@
       this.billForm?.addEventListener('submit', (e) => this.handleBillSubmit(e));
       this.expenseForm?.addEventListener('submit', (e) => this.handleExpenseSubmit(e));
       this.budgetForm?.addEventListener('submit', (e) => this.handleBudgetSubmit(e));
+      this.alertForm?.addEventListener('submit', (e) => this.handleAlertSubmit(e));
+
+      // Controles dinâmicos de Alertas & WhatsApp
+      this.alertEnabledToggle?.addEventListener('change', () => this.updateAlertModalControlsState());
+      this.alertDaysBeforeSelect?.addEventListener('change', () => this.updateAlertModalPreview());
+      this.whatsappEnabledToggle?.addEventListener('change', () => this.updateAlertModalControlsState());
+      this.sendAlertsWhatsappBtn?.addEventListener('click', () => this.sendDueAlertsToWhatsApp());
+      this.testWhatsappAlertBtn?.addEventListener('click', () => this.sendModalSummaryToWhatsApp());
+      this.dismissAlertsBannerBtn?.addEventListener('click', () => this.dismissAlertsForToday());
 
       // 5. Filtros de Contas
       this.billFilterBtns.forEach(btn => {
@@ -1324,6 +1422,7 @@
             incomes: (parsed.incomes && typeof parsed.incomes === 'object') ? parsed.incomes : {},
             currentPeriod: parsed.currentPeriod || Utils.getCurrentPeriodISO(),
             budgets: (parsed.budgets && typeof parsed.budgets === 'object') ? parsed.budgets : {},
+            alertSettings: Utils.normalizeAlertSettings(parsed.alertSettings),
             bills: Array.isArray(parsed.bills) ? parsed.bills : [],
             expenses: Array.isArray(parsed.expenses) ? parsed.expenses : []
           };
@@ -1347,6 +1446,7 @@
     // ========================================================================
     render() {
       this.renderPeriod();
+      this.renderDueAlerts();
       this.renderKPIs();
       this.renderBurnRate();
       this.checkPreviousMonthBills();
@@ -1668,6 +1768,511 @@
     },
 
     // ========================================================================
+    // ALERTAS DE VENCIMENTO & INTEGRAÇÃO WHATSAPP
+    // ========================================================================
+    getAlertSettings() {
+      this.state.alertSettings = Utils.normalizeAlertSettings(this.state.alertSettings);
+      return this.state.alertSettings;
+    },
+
+    getDueAlertBills(customDaysBefore = null) {
+      const settings = this.getAlertSettings();
+      const daysBefore = customDaysBefore !== null ? customDaysBefore : settings.daysBefore;
+
+      const unpaidBills = this.state.bills
+        .filter(b => !b.paid && b.dueDate)
+        .slice()
+        .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+
+      const overdue = [];
+      const dueToday = [];
+      const upcoming = [];
+
+      unpaidBills.forEach(bill => {
+        const status = Utils.calculateBillStatus(bill.dueDate, false, daysBefore);
+        const item = { bill, status };
+        if (status.key === 'overdue') {
+          overdue.push(item);
+        } else if (status.key === 'soon') {
+          if (status.diffDays === 0) {
+            dueToday.push(item);
+          } else {
+            upcoming.push(item);
+          }
+        }
+      });
+
+      const all = [...overdue, ...dueToday, ...upcoming];
+      const totalAmount = all.reduce((sum, item) => sum + (item.bill.amount || 0), 0);
+
+      return { overdue, dueToday, upcoming, all, totalAmount, daysBefore };
+    },
+
+    buildAlertsWhatsAppMessage(alertData) {
+      const lines = ['🔔 *FinFlow — Alerta de Vencimentos*', ''];
+
+      if (alertData.overdue.length > 0) {
+        lines.push(`🚨 *Atrasadas (${alertData.overdue.length}):*`);
+        alertData.overdue.forEach(({ bill, status }) => {
+          const days = Math.abs(status.diffDays);
+          lines.push(`• ${bill.title} — ${Utils.formatCurrency(bill.amount)} (venceu em ${Utils.formatDate(bill.dueDate)} • ${days}d de atraso)`);
+        });
+        lines.push('');
+      }
+
+      if (alertData.dueToday.length > 0) {
+        lines.push(`⏰ *Vencem Hoje (${alertData.dueToday.length}):*`);
+        alertData.dueToday.forEach(({ bill }) => {
+          lines.push(`• ${bill.title} — ${Utils.formatCurrency(bill.amount)} (${bill.category})`);
+        });
+        lines.push('');
+      }
+
+      if (alertData.upcoming.length > 0) {
+        lines.push(`📅 *Próximos ${alertData.daysBefore} dia(s) (${alertData.upcoming.length}):*`);
+        alertData.upcoming.forEach(({ bill, status }) => {
+          const dayLabel = status.diffDays === 1 ? 'amanhã' : `em ${status.diffDays} dias`;
+          lines.push(`• ${bill.title} — ${Utils.formatCurrency(bill.amount)} (${Utils.formatDate(bill.dueDate)} • ${dayLabel})`);
+        });
+        lines.push('');
+      }
+
+      lines.push(`💰 *Total em alerta:* ${Utils.formatCurrency(alertData.totalAmount)}`);
+      lines.push('');
+      lines.push('_Enviado pelo FinFlow_');
+
+      return lines.join('\n');
+    },
+
+    buildSingleBillWhatsAppMessage(bill) {
+      const settings = this.getAlertSettings();
+      const status = Utils.calculateBillStatus(bill.dueDate, bill.paid, settings.daysBefore);
+
+      let header = '📅 *FinFlow — Lembrete de Conta*';
+      if (status.key === 'overdue') header = '🚨 *FinFlow — Conta Atrasada*';
+      else if (status.diffDays === 0) header = '⏰ *FinFlow — Conta Vence Hoje*';
+      else if (status.diffDays === 1) header = '⏳ *FinFlow — Conta Vence Amanhã*';
+
+      return [
+        header,
+        '',
+        `• *Conta:* ${bill.title}`,
+        `• *Valor:* ${Utils.formatCurrency(bill.amount)}`,
+        `• *Vencimento:* ${Utils.formatDate(bill.dueDate)} (${status.label})`,
+        `• *Categoria:* ${bill.category}`,
+        '',
+        '_Enviado pelo FinFlow_'
+      ].join('\n');
+    },
+
+    openWhatsAppWithMessage(message, customPhone = null) {
+      const settings = this.getAlertSettings();
+      const rawPhone = customPhone !== null ? customPhone : settings.whatsappPhone;
+      const phone = Utils.formatWhatsappPhone(rawPhone);
+      const encoded = encodeURIComponent(message);
+      const url = phone
+        ? `https://wa.me/${phone}?text=${encoded}`
+        : `https://wa.me/?text=${encoded}`;
+
+      const popup = window.open(url, '_blank', 'noopener,noreferrer');
+      if (!popup) {
+        window.location.href = url;
+      }
+    },
+
+    sendDueAlertsToWhatsApp(customDaysBefore = null, customPhone = null) {
+      const settings = this.getAlertSettings();
+      if (customDaysBefore === null && !settings.whatsappEnabled) {
+        Toast.show('O envio para o WhatsApp está desativado nas configurações de alertas.', 'warning');
+        return;
+      }
+
+      const alertData = this.getDueAlertBills(customDaysBefore);
+      if (alertData.all.length === 0) {
+        const periodPending = this.state.bills
+          .filter(b => !b.paid && b.dueDate && b.dueDate.startsWith(this.state.currentPeriod))
+          .slice()
+          .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+
+        if (periodPending.length > 0) {
+          const totalPeriodPending = periodPending.reduce((s, b) => s + (b.amount || 0), 0);
+          const lines = [
+            `📋 *FinFlow — Contas Pendentes de ${Utils.formatPeriod(this.state.currentPeriod)}*`,
+            ''
+          ];
+          periodPending.forEach(b => {
+            lines.push(`• ${b.title} — ${Utils.formatCurrency(b.amount)} (vence ${Utils.formatDate(b.dueDate)})`);
+          });
+          lines.push('');
+          lines.push(`💰 *Total pendente no mês:* ${Utils.formatCurrency(totalPeriodPending)}`);
+          lines.push('');
+          lines.push('_Enviado pelo FinFlow_');
+          this.openWhatsAppWithMessage(lines.join('\n'), customPhone);
+          return;
+        }
+
+        const okMsg = [
+          '✅ *FinFlow — Contas em Dia*',
+          `Nenhuma conta atrasada ou vencendo nos próximos ${alertData.daysBefore} dia(s).`,
+          '',
+          '_Enviado pelo FinFlow_'
+        ].join('\n');
+        this.openWhatsAppWithMessage(okMsg, customPhone);
+        return;
+      }
+
+      const msg = this.buildAlertsWhatsAppMessage(alertData);
+      this.openWhatsAppWithMessage(msg, customPhone);
+    },
+
+    sendSingleBillToWhatsApp(billId) {
+      const settings = this.getAlertSettings();
+      if (!settings.whatsappEnabled) {
+        Toast.show('O envio para o WhatsApp está desativado nas configurações de alertas.', 'warning');
+        return;
+      }
+      const bill = this.state.bills.find(b => b.id === billId);
+      if (!bill) return;
+
+      const msg = this.buildSingleBillWhatsAppMessage(bill);
+      this.openWhatsAppWithMessage(msg);
+    },
+
+    sendModalSummaryToWhatsApp() {
+      if (this.whatsappEnabledToggle && !this.whatsappEnabledToggle.checked) {
+        Toast.show('Ative a opção "Envio para o WhatsApp" para enviar lembretes.', 'warning');
+        return;
+      }
+      const days = this.alertDaysBeforeSelect ? Number(this.alertDaysBeforeSelect.value) : null;
+      const phone = this.whatsappPhoneInput ? this.whatsappPhoneInput.value : '';
+      this.sendDueAlertsToWhatsApp(days, phone);
+    },
+
+    renderDueAlerts() {
+      const settings = this.getAlertSettings();
+      const alertData = this.getDueAlertBills();
+      const hasAlerts = settings.enabled && alertData.all.length > 0;
+      const hasUrgent = alertData.overdue.length > 0 || alertData.dueToday.length > 0;
+      const badgeText = alertData.all.length > 9 ? '9+' : String(alertData.all.length);
+
+      // Atualiza cor dos ícones de sino nos gatilhos (ativo vs desativado)
+      [this.openAlertModalBtn, this.mobileAlertBtn, this.openAlertBillsBtn].forEach(btn => {
+        const icon = btn?.querySelector('.fa-bell');
+        if (!icon) return;
+        icon.classList.toggle('text-amber-400', settings.enabled);
+        icon.classList.toggle('text-slate-500', !settings.enabled);
+      });
+
+      // Atualiza badges no header desktop e barra mobile
+      [this.headerAlertBadge, this.mobileAlertBadge].forEach(badge => {
+        if (!badge) return;
+        badge.textContent = badgeText;
+        badge.classList.toggle('hidden', !hasAlerts);
+        badge.classList.toggle('bg-rose-500', hasUrgent);
+        badge.classList.toggle('bg-amber-500', !hasUrgent);
+      });
+
+      if (!this.dueAlertsBanner) return;
+
+      const today = Utils.getTodayISO();
+      const isDismissedToday = settings.dismissedDate === today;
+
+      if (!hasAlerts || isDismissedToday) {
+        this.dueAlertsBanner.classList.add('hidden');
+        if (hasAlerts) {
+          this.maybeShowBrowserNotification(alertData);
+        }
+        return;
+      }
+
+      const isOverdueMode = alertData.overdue.length > 0;
+      this.dueAlertsBanner.className = isOverdueMode
+        ? 'rounded-2xl border border-rose-500/40 bg-gradient-to-br from-rose-500/15 via-slate-900 to-slate-900 p-4 sm:p-5 shadow-lg'
+        : 'rounded-2xl border border-amber-500/35 bg-gradient-to-br from-amber-500/10 via-slate-900 to-slate-900 p-4 sm:p-5 shadow-lg';
+
+      if (this.alertsBannerIconWrap) {
+        this.alertsBannerIconWrap.className = isOverdueMode
+          ? 'w-10 h-10 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center shrink-0 mt-0.5'
+          : 'w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0 mt-0.5';
+      }
+      if (this.alertsBannerIcon) {
+        this.alertsBannerIcon.className = isOverdueMode
+          ? 'fa-solid fa-triangle-exclamation text-rose-400 text-base'
+          : 'fa-solid fa-bell text-amber-400 text-base';
+      }
+
+      if (this.alertsBannerTitle) {
+        this.alertsBannerTitle.textContent = `Contas em atenção (${alertData.all.length})`;
+      }
+
+      if (this.alertsBannerBadges) {
+        const pills = [];
+        if (alertData.overdue.length > 0) {
+          const n = alertData.overdue.length;
+          pills.push(`<span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/30">${n} atrasada${n > 1 ? 's' : ''}</span>`);
+        }
+        if (alertData.dueToday.length > 0) {
+          const n = alertData.dueToday.length;
+          pills.push(`<span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">${n} ${n > 1 ? 'vencem' : 'vence'} hoje</span>`);
+        }
+        if (alertData.upcoming.length > 0) {
+          const n = alertData.upcoming.length;
+          pills.push(`<span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">${n} próxima${n > 1 ? 's' : ''} (${alertData.daysBefore}d)</span>`);
+        }
+        this.alertsBannerBadges.innerHTML = pills.join('');
+      }
+
+      if (this.alertsBannerSubtitle) {
+        this.alertsBannerSubtitle.textContent = `Total pendente em alerta: ${Utils.formatCurrency(alertData.totalAmount)}`;
+      }
+
+      if (this.sendAlertsWhatsappBtn) {
+        this.sendAlertsWhatsappBtn.classList.toggle('hidden', !settings.whatsappEnabled);
+        this.sendAlertsWhatsappBtn.classList.toggle('inline-flex', settings.whatsappEnabled);
+      }
+
+      if (this.alertsBannerList) {
+        const visibleItems = alertData.all.slice(0, 6);
+        let cardsHtml = '';
+
+        visibleItems.forEach(({ bill, status }) => {
+          const isItemOverdue = status.key === 'overdue';
+          const pillClass = isItemOverdue
+            ? 'text-rose-300 bg-rose-500/15 border-rose-500/30'
+            : 'text-amber-300 bg-amber-500/15 border-amber-500/30';
+
+          cardsHtml += `
+            <div class="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-slate-900/80 border border-slate-700/70">
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <p class="text-xs font-semibold text-slate-100 truncate">${Utils.escapeHTML(bill.title)}</p>
+                  <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold border ${pillClass}">${status.label}</span>
+                </div>
+                <p class="text-[11px] text-slate-400 mt-1">
+                  ${Utils.formatDate(bill.dueDate)} • <span class="text-slate-200 font-semibold">${Utils.formatCurrency(bill.amount)}</span>
+                </p>
+              </div>
+              <div class="flex items-center gap-1.5 shrink-0">
+                ${settings.whatsappEnabled ? `
+                  <button data-banner-wa-id="${bill.id}" class="w-8 h-8 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 flex items-center justify-center transition-smooth" title="Enviar esta conta no WhatsApp">
+                    <i class="fa-brands fa-whatsapp text-sm"></i>
+                  </button>
+                ` : ''}
+                <button data-banner-pay-id="${bill.id}" class="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold transition-smooth active:scale-95" title="Marcar conta como paga">
+                  Pagar
+                </button>
+              </div>
+            </div>
+          `;
+        });
+
+        if (alertData.all.length > 6) {
+          const extra = alertData.all.length - 6;
+          cardsHtml += `
+            <div class="md:col-span-2 xl:col-span-3 text-[11px] text-slate-400 pt-1">
+              + ${extra} outra${extra > 1 ? 's' : ''} conta${extra > 1 ? 's' : ''} em atenção listada${extra > 1 ? 's' : ''} abaixo.
+            </div>
+          `;
+        }
+
+        this.alertsBannerList.innerHTML = cardsHtml;
+
+        this.alertsBannerList.querySelectorAll('[data-banner-pay-id]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const id = btn.getAttribute('data-banner-pay-id');
+            this.toggleBillStatus(id);
+          });
+        });
+
+        this.alertsBannerList.querySelectorAll('[data-banner-wa-id]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const id = btn.getAttribute('data-banner-wa-id');
+            this.sendSingleBillToWhatsApp(id);
+          });
+        });
+      }
+
+      this.maybeShowBrowserNotification(alertData);
+    },
+
+    maybeShowBrowserNotification(alertData) {
+      const settings = this.getAlertSettings();
+      if (!settings.enabled || !settings.browserNotify || alertData.all.length === 0) return;
+      if (typeof window === 'undefined' || !('Notification' in window)) return;
+      if (Notification.permission !== 'granted') return;
+
+      const today = Utils.getTodayISO();
+      if (settings.lastNotifiedDate === today) return;
+
+      const parts = [];
+      if (alertData.overdue.length > 0) parts.push(`${alertData.overdue.length} atrasada(s)`);
+      if (alertData.dueToday.length > 0) parts.push(`${alertData.dueToday.length} vence(m) hoje`);
+      if (alertData.upcoming.length > 0) parts.push(`${alertData.upcoming.length} próxima(s)`);
+
+      const body = `Você tem ${alertData.all.length} conta(s) em atenção (${parts.join(', ')}), totalizando ${Utils.formatCurrency(alertData.totalAmount)}.`;
+
+      try {
+        new Notification('FinFlow — Contas a Vencer', {
+          body,
+          icon: './icon-192.png',
+          tag: 'finflow-due-alerts'
+        });
+        settings.lastNotifiedDate = today;
+        this.state.alertSettings = settings;
+        Storage.save(this.state);
+      } catch (err) {
+        console.warn('Não foi possível exibir notificação local:', err);
+      }
+    },
+
+    dismissAlertsForToday() {
+      const settings = this.getAlertSettings();
+      settings.dismissedDate = Utils.getTodayISO();
+      this.state.alertSettings = settings;
+      Storage.save(this.state);
+      this.renderDueAlerts();
+      Toast.show('Banner ocultado por hoje. Acesse pelo sino quando precisar.', 'info');
+    },
+
+    openAlertModal() {
+      const settings = this.getAlertSettings();
+
+      if (this.alertEnabledToggle) this.alertEnabledToggle.checked = settings.enabled;
+      if (this.alertDaysBeforeSelect) this.alertDaysBeforeSelect.value = String(settings.daysBefore);
+      if (this.alertBrowserNotifyToggle) this.alertBrowserNotifyToggle.checked = settings.browserNotify;
+      if (this.whatsappEnabledToggle) this.whatsappEnabledToggle.checked = settings.whatsappEnabled;
+      if (this.whatsappPhoneInput) this.whatsappPhoneInput.value = settings.whatsappPhone || '';
+
+      this.updateAlertModalControlsState();
+      this.openModal(this.alertModal);
+    },
+
+    updateAlertModalControlsState() {
+      const alertsOn = this.alertEnabledToggle ? this.alertEnabledToggle.checked : true;
+      const whatsappOn = this.whatsappEnabledToggle ? this.whatsappEnabledToggle.checked : true;
+
+      if (this.alertOptionsGroup) {
+        this.alertOptionsGroup.classList.toggle('opacity-50', !alertsOn);
+        this.alertOptionsGroup.classList.toggle('pointer-events-none', !alertsOn);
+      }
+      if (this.alertDaysBeforeSelect) this.alertDaysBeforeSelect.disabled = !alertsOn;
+      if (this.alertBrowserNotifyToggle) this.alertBrowserNotifyToggle.disabled = !alertsOn;
+
+      if (this.whatsappOptionsGroup) {
+        this.whatsappOptionsGroup.classList.toggle('opacity-50', !whatsappOn);
+        this.whatsappOptionsGroup.classList.toggle('pointer-events-none', !whatsappOn);
+      }
+      if (this.whatsappPhoneInput) this.whatsappPhoneInput.disabled = !whatsappOn;
+      if (this.testWhatsappAlertBtn) {
+        this.testWhatsappAlertBtn.disabled = !whatsappOn;
+        this.testWhatsappAlertBtn.classList.toggle('opacity-50', !whatsappOn);
+        this.testWhatsappAlertBtn.classList.toggle('cursor-not-allowed', !whatsappOn);
+      }
+
+      this.updateAlertModalPreview();
+    },
+
+    updateAlertModalPreview() {
+      if (!this.alertModalSummaryBox) return;
+
+      const alertsOn = this.alertEnabledToggle ? this.alertEnabledToggle.checked : true;
+      const whatsappOn = this.whatsappEnabledToggle ? this.whatsappEnabledToggle.checked : true;
+      const days = this.alertDaysBeforeSelect ? Number(this.alertDaysBeforeSelect.value) : 3;
+      const alertData = this.getDueAlertBills(days);
+
+      if (!alertsOn && !whatsappOn) {
+        this.alertModalSummaryBox.innerHTML = `
+          <div class="flex items-center gap-2 text-slate-400">
+            <i class="fa-solid fa-bell-slash text-slate-500"></i>
+            <span>Alertas visuais e integração com WhatsApp estão desativados.</span>
+          </div>
+        `;
+        return;
+      }
+
+      if (alertData.all.length === 0) {
+        this.alertModalSummaryBox.innerHTML = `
+          <div class="flex items-center gap-2 text-emerald-300">
+            <i class="fa-solid fa-circle-check text-emerald-400"></i>
+            <span>Nenhuma conta atrasada ou vencendo nos próximos <strong>${days} dia(s)</strong> no momento.</span>
+          </div>
+        `;
+        return;
+      }
+
+      this.alertModalSummaryBox.innerHTML = `
+        <div class="space-y-1">
+          <div class="flex items-center gap-2 text-amber-300 font-semibold">
+            <i class="fa-solid fa-bolt text-amber-400"></i>
+            <span>Resumo com antecedência de ${days} dia(s):</span>
+          </div>
+          <p class="text-slate-300">
+            <strong>${alertData.all.length} conta(s)</strong> em atenção (${alertData.overdue.length} atrasada(s), ${alertData.dueToday.length} hoje, ${alertData.upcoming.length} próxima(s)) — Total de <strong>${Utils.formatCurrency(alertData.totalAmount)}</strong>.
+          </p>
+        </div>
+      `;
+    },
+
+    async handleAlertSubmit(e) {
+      e.preventDefault();
+
+      const prevSettings = this.getAlertSettings();
+      const enabled = this.alertEnabledToggle ? this.alertEnabledToggle.checked : true;
+      const daysBefore = this.alertDaysBeforeSelect ? Number(this.alertDaysBeforeSelect.value) : 3;
+      const whatsappEnabled = this.whatsappEnabledToggle ? this.whatsappEnabledToggle.checked : true;
+      const whatsappPhone = this.whatsappPhoneInput ? this.whatsappPhoneInput.value.replace(/\D/g, '').slice(0, 15) : '';
+      let browserNotify = this.alertBrowserNotifyToggle ? this.alertBrowserNotifyToggle.checked : false;
+
+      if (enabled && browserNotify) {
+        if (typeof window === 'undefined' || !('Notification' in window)) {
+          browserNotify = false;
+          if (this.alertBrowserNotifyToggle) this.alertBrowserNotifyToggle.checked = false;
+          Toast.show('Este navegador ou iPhone não suporta notificações locais neste modo.', 'warning');
+        } else if (Notification.permission === 'default') {
+          try {
+            const permission = await Notification.requestPermission();
+            if (permission !== 'granted') {
+              browserNotify = false;
+              if (this.alertBrowserNotifyToggle) this.alertBrowserNotifyToggle.checked = false;
+              Toast.show('Permissão de notificação não concedida. Alertas no painel continuam ativos.', 'warning');
+            }
+          } catch (err) {
+            browserNotify = false;
+            if (this.alertBrowserNotifyToggle) this.alertBrowserNotifyToggle.checked = false;
+          }
+        } else if (Notification.permission === 'denied') {
+          browserNotify = false;
+          if (this.alertBrowserNotifyToggle) this.alertBrowserNotifyToggle.checked = false;
+          Toast.show('As notificações estão bloqueadas nas permissões do navegador.', 'warning');
+        }
+      }
+
+      this.state.alertSettings = Utils.normalizeAlertSettings({
+        enabled,
+        daysBefore,
+        whatsappEnabled,
+        whatsappPhone,
+        browserNotify,
+        lastNotifiedDate: prevSettings.lastNotifiedDate,
+        dismissedDate: null
+      });
+
+      Storage.save(this.state);
+      this.closeModal(this.alertModal);
+      this.render();
+
+      if (!enabled && !whatsappEnabled) {
+        Toast.show('Alertas de vencimento e WhatsApp desativados.', 'info');
+      } else if (!enabled) {
+        Toast.show('Alertas de vencimento desativados. WhatsApp continua ativo.', 'info');
+      } else if (!whatsappEnabled) {
+        Toast.show('Alertas salvos. Botões do WhatsApp desativados.', 'info');
+      } else {
+        Toast.show('Configurações de alertas e WhatsApp salvas!', 'success');
+      }
+    },
+
+    // ========================================================================
     // RENDERIZAÇÃO DA SEÇÃO DE CONTAS
     // ========================================================================
     renderBills() {
@@ -1701,9 +2306,10 @@
         return;
       }
 
+      const alertSettings = this.getAlertSettings();
       let html = '';
       bills.forEach(bill => {
-        const status = Utils.calculateBillStatus(bill.dueDate, bill.paid);
+        const status = Utils.calculateBillStatus(bill.dueDate, bill.paid, alertSettings.daysBefore);
         const isChecked = bill.paid ? 'checked' : '';
         const categoryIcon = CATEGORY_ICONS[bill.category] || 'fa-file-invoice';
 
@@ -1753,6 +2359,11 @@
                 ${Utils.formatCurrency(bill.amount)}
               </span>
               <div class="flex items-center gap-1">
+                ${(!bill.paid && alertSettings.whatsappEnabled) ? `
+                  <button data-whatsapp-bill-id="${bill.id}" class="action-icon-btn text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/15" title="Enviar lembrete no WhatsApp">
+                    <i class="fa-brands fa-whatsapp text-sm"></i>
+                  </button>
+                ` : ''}
                 <button data-edit-bill-id="${bill.id}" class="action-icon-btn text-slate-400 hover:text-indigo-400 hover:bg-slate-800" title="Editar conta">
                   <i class="fa-solid fa-pen text-xs"></i>
                 </button>
@@ -1773,6 +2384,14 @@
         chk.addEventListener('change', (e) => {
           const id = e.target.getAttribute('data-bill-id');
           this.toggleBillStatus(id);
+        });
+      });
+
+      // Eventos: Lembrete individual via WhatsApp
+      this.billsListContainer.querySelectorAll('[data-whatsapp-bill-id]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-whatsapp-bill-id');
+          this.sendSingleBillToWhatsApp(id);
         });
       });
 

@@ -22,3 +22,4 @@
 - [x] Máscara de entrada monetária em tempo real nos formulários.
 - [x] Orçamento por categoria com alerta visual de teto de gastos (Budgeting).
 - [x] Projeção de ritmo de queima orçamentária (Burn-rate diário).
+- [x] Alertas de vencimento de contas fixas com envio formatado para WhatsApp e controle de ativação/desativação.

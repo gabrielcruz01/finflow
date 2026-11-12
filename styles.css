@@ -74,12 +74,14 @@ button:focus-visible {
   box-shadow: 0 0 0 2px #6366f1, 0 0 0 4px rgba(99, 102, 241, 0.2);
 }
 
-/* Toggle Switch de 1-Clique para Contas */
-.bill-toggle-checkbox:checked + .bill-toggle-track {
+/* Toggle Switch de 1-Clique (Contas e Configurações) */
+.bill-toggle-checkbox:checked + .bill-toggle-track,
+.finflow-toggle-checkbox:checked + .finflow-toggle-track {
   background-color: #10b981;
 }
 
-.bill-toggle-checkbox:checked + .bill-toggle-track .bill-toggle-thumb {
+.bill-toggle-checkbox:checked + .bill-toggle-track .bill-toggle-thumb,
+.finflow-toggle-checkbox:checked + .finflow-toggle-track .finflow-toggle-thumb {
   transform: translateX(1.25rem);
 }
 

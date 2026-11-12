@@ -101,6 +101,13 @@
             <span>Metas</span>
           </button>
 
+          <!-- Alertas de Vencimento & WhatsApp -->
+          <button id="openAlertModalBtn" class="hidden sm:flex items-center gap-2 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-semibold text-slate-200 transition-smooth hover:border-slate-600 shadow-sm" title="Alertas de Vencimento e WhatsApp">
+            <i class="fa-solid fa-bell text-amber-400"></i>
+            <span>Alertas</span>
+            <span id="headerAlertBadge" class="hidden min-w-[18px] h-[18px] px-1.5 rounded-full bg-rose-500 text-white text-[10px] font-bold text-center leading-[18px]">0</span>
+          </button>
+
           <!-- Exportar Fechamento CSV -->
           <button id="exportCsvBtn" class="tap-target w-9 h-9 sm:w-auto sm:px-3 sm:py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition-smooth flex items-center justify-center gap-2" title="Exportar Fechamento do Mês em CSV (Excel)">
             <i class="fa-solid fa-file-csv text-base"></i>
@@ -127,6 +134,41 @@
 
   <!-- ==================== CONTEÚDO PRINCIPAL ==================== -->
   <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 pb-28 md:pb-12 space-y-6">
+
+    <!-- BANNER INTELIGENTE DE ALERTAS DE VENCIMENTO -->
+    <section id="dueAlertsBanner" class="hidden rounded-2xl border border-amber-500/30 bg-gradient-to-br from-amber-500/10 via-slate-900 to-slate-900 p-4 sm:p-5 shadow-lg">
+      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div class="flex items-start gap-3.5">
+          <div id="alertsBannerIconWrap" class="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0 mt-0.5">
+            <i id="alertsBannerIcon" class="fa-solid fa-bell text-amber-400 text-base"></i>
+          </div>
+          <div class="space-y-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <h2 id="alertsBannerTitle" class="text-sm sm:text-base font-bold text-white">Alertas de Vencimento</h2>
+              <span id="alertsBannerBadges" class="flex flex-wrap items-center gap-1.5"></span>
+            </div>
+            <p id="alertsBannerSubtitle" class="text-xs sm:text-sm text-slate-300"></p>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2 shrink-0">
+          <button id="sendAlertsWhatsappBtn" class="hidden inline-flex items-center gap-2 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl transition-smooth shadow-lg shadow-emerald-600/20 active:scale-95">
+            <i class="fa-brands fa-whatsapp text-sm"></i>
+            <span>Enviar no WhatsApp</span>
+          </button>
+          <button id="openAlertsFromBannerBtn" class="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold rounded-xl transition-smooth" title="Configurar Alertas">
+            <i class="fa-solid fa-sliders text-amber-400"></i>
+            <span>Configurar</span>
+          </button>
+          <button id="dismissAlertsBannerBtn" class="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 text-xs font-medium rounded-xl transition-smooth" title="Ocultar alerta apenas hoje">
+            <i class="fa-solid fa-xmark"></i>
+            <span>Dispensar hoje</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="alertsBannerList" class="mt-3.5 pt-3.5 border-t border-slate-800/80 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5"></div>
+    </section>
 
     <!-- 1. MÉTRICAS DE TOPO (CARDS KPI) -->
     <section aria-label="Visão Geral Financeira">
@@ -272,6 +314,12 @@
                 <button data-bill-filter="pending" class="bill-filter-btn px-2.5 py-1 rounded-md font-medium text-slate-400 hover:text-white transition-smooth">Pendentes</button>
                 <button data-bill-filter="paid" class="bill-filter-btn px-2.5 py-1 rounded-md font-medium text-slate-400 hover:text-white transition-smooth">Pagas</button>
               </div>
+
+              <!-- Botão Configurar Alertas & WhatsApp -->
+              <button id="openAlertBillsBtn" class="tap-target px-2.5 py-1.5 bg-slate-700/60 hover:bg-slate-700 active:scale-95 text-slate-200 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-smooth border border-slate-600/80" title="Configurar Alertas de Vencimento e WhatsApp">
+                <i class="fa-solid fa-bell text-amber-400"></i>
+                <span class="hidden md:inline">Alertas</span>
+              </button>
 
               <!-- Botão Replicar Contas do Mês Anterior (Recorrência) -->
               <button id="replicateBillsHeaderBtn" class="hidden tap-target px-3 py-1.5 bg-slate-700/60 hover:bg-slate-700 active:scale-95 text-slate-200 text-xs font-semibold rounded-lg items-center gap-1.5 transition-smooth border border-slate-600" title="Copiar contas fixas cadastradas no mês anterior">
@@ -450,17 +498,25 @@
         <span class="text-[10px] font-medium mt-1">Renda</span>
       </button>
 
-      <button id="mobileBudgetBtn" class="flex flex-col items-center justify-center py-1 px-2.5 text-slate-400 hover:text-white transition-colors">
+      <button id="mobileBudgetBtn" class="flex flex-col items-center justify-center py-1 px-2 text-slate-400 hover:text-white transition-colors">
         <i class="fa-solid fa-bullseye text-base text-amber-400"></i>
         <span class="text-[10px] font-medium mt-1">Metas</span>
       </button>
 
-      <button id="mobileNewBillBtn" class="flex-1 py-2.5 px-3 bg-slate-800 border border-slate-700 rounded-xl text-slate-200 hover:text-white flex items-center justify-center gap-2 text-xs font-semibold transition-smooth active:scale-95 shadow-sm">
+      <button id="mobileAlertBtn" class="relative flex flex-col items-center justify-center py-1 px-2 text-slate-400 hover:text-white transition-colors" title="Alertas e WhatsApp">
+        <div class="relative">
+          <i class="fa-solid fa-bell text-base text-amber-400"></i>
+          <span id="mobileAlertBadge" class="hidden absolute -top-1.5 -right-2.5 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[9px] font-bold text-center leading-4">0</span>
+        </div>
+        <span class="text-[10px] font-medium mt-1">Alertas</span>
+      </button>
+
+      <button id="mobileNewBillBtn" class="flex-1 py-2.5 px-2.5 bg-slate-800 border border-slate-700 rounded-xl text-slate-200 hover:text-white flex items-center justify-center gap-1.5 text-xs font-semibold transition-smooth active:scale-95 shadow-sm">
         <i class="fa-solid fa-file-invoice text-indigo-400"></i>
         <span>+ Conta</span>
       </button>
 
-      <button id="mobileNewExpenseBtn" class="flex-1 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-white flex items-center justify-center gap-2 text-xs font-semibold transition-smooth active:scale-95 shadow-lg shadow-emerald-600/30">
+      <button id="mobileNewExpenseBtn" class="flex-1 py-2.5 px-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-white flex items-center justify-center gap-1.5 text-xs font-semibold transition-smooth active:scale-95 shadow-lg shadow-emerald-600/30">
         <i class="fa-solid fa-plus"></i>
         <span>+ Gasto</span>
       </button>
@@ -792,6 +848,128 @@
           <button type="submit" class="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-semibold transition-smooth shadow-md shadow-amber-600/20">
             Salvar Tetos
           </button>
+        </div>
+      </form>
+
+    </div>
+  </div>
+
+  <!-- 6. MODAL: CONFIGURAÇÕES DE ALERTAS E WHATSAPP -->
+  <div id="alertModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="modal-backdrop fixed inset-0 bg-slate-950/80 backdrop-blur-sm modal-backdrop-animate"></div>
+    <div class="modal-content relative bg-slate-800 border border-slate-700 w-full max-w-lg rounded-2xl shadow-2xl p-6 modal-content-animate z-10 flex flex-col max-h-[90vh]">
+      
+      <div class="flex items-center justify-between pb-4 border-b border-slate-700 flex-shrink-0">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center">
+            <i class="fa-solid fa-bell text-base"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-white text-base">Alertas de Vencimento &amp; WhatsApp</h3>
+            <p class="text-xs text-slate-400">Ative ou desative lembretes de contas fixas</p>
+          </div>
+        </div>
+        <button type="button" data-close-modal="alertModal" class="text-slate-400 hover:text-white p-1 rounded-lg">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <form id="alertForm" class="mt-4 flex-1 overflow-y-auto pr-1 space-y-4">
+        
+        <!-- Bloco 1: Alertas no App -->
+        <div class="p-4 rounded-xl bg-slate-900/60 border border-slate-700/70 space-y-3.5">
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <h4 class="text-sm font-semibold text-white">Alertas de vencimento no painel</h4>
+              <p class="text-xs text-slate-400 mt-0.5">Destaca contas atrasadas, vencendo hoje ou próximas</p>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer flex-shrink-0" title="Ativar ou desativar alertas de vencimento">
+              <input type="checkbox" id="alertEnabledToggle" class="sr-only finflow-toggle-checkbox" checked />
+              <div class="finflow-toggle-track w-11 h-6 bg-slate-700 rounded-full transition-colors relative">
+                <div class="finflow-toggle-thumb w-5 h-5 bg-white rounded-full transition-transform absolute top-0.5 left-0.5 shadow-md"></div>
+              </div>
+            </label>
+          </div>
+
+          <div id="alertOptionsGroup" class="space-y-3 pt-3 border-t border-slate-800 transition-opacity">
+            <div>
+              <label for="alertDaysBeforeSelect" class="block text-xs font-semibold text-slate-300 mb-1.5">
+                Avisar com antecedência de
+              </label>
+              <select id="alertDaysBeforeSelect" class="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-amber-500 transition-colors">
+                <option value="0">Apenas no dia do vencimento (e atrasadas)</option>
+                <option value="1">1 dia antes do vencimento</option>
+                <option value="3">3 dias antes do vencimento (Padrão)</option>
+                <option value="5">5 dias antes do vencimento</option>
+                <option value="7">7 dias antes do vencimento</option>
+              </select>
+            </div>
+
+            <div class="flex items-center justify-between gap-3 pt-1">
+              <div>
+                <p class="text-xs font-semibold text-slate-200">Notificação local ao abrir o app</p>
+                <p class="text-[11px] text-slate-400 mt-0.5">Envia um aviso do dispositivo (máx. 1x ao dia) se o navegador permitir</p>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer flex-shrink-0" title="Ativar notificação local do navegador">
+                <input type="checkbox" id="alertBrowserNotifyToggle" class="sr-only finflow-toggle-checkbox" />
+                <div class="finflow-toggle-track w-11 h-6 bg-slate-700 rounded-full transition-colors relative">
+                  <div class="finflow-toggle-thumb w-5 h-5 bg-white rounded-full transition-transform absolute top-0.5 left-0.5 shadow-md"></div>
+                </div>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bloco 2: Integração WhatsApp -->
+        <div class="p-4 rounded-xl bg-slate-900/60 border border-slate-700/70 space-y-3.5">
+          <div class="flex items-center justify-between gap-3">
+            <div class="flex items-center gap-2.5">
+              <div class="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center flex-shrink-0">
+                <i class="fa-brands fa-whatsapp text-base"></i>
+              </div>
+              <div>
+                <h4 class="text-sm font-semibold text-white">Envio para o WhatsApp</h4>
+                <p class="text-xs text-slate-400 mt-0.5">Habilita botões de lembrete no banner e nas contas</p>
+              </div>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer flex-shrink-0" title="Ativar ou desativar botões do WhatsApp">
+              <input type="checkbox" id="whatsappEnabledToggle" class="sr-only finflow-toggle-checkbox" checked />
+              <div class="finflow-toggle-track w-11 h-6 bg-slate-700 rounded-full transition-colors relative">
+                <div class="finflow-toggle-thumb w-5 h-5 bg-white rounded-full transition-transform absolute top-0.5 left-0.5 shadow-md"></div>
+              </div>
+            </label>
+          </div>
+
+          <div id="whatsappOptionsGroup" class="space-y-2 pt-3 border-t border-slate-800 transition-opacity">
+            <label for="whatsappPhoneInput" class="block text-xs font-semibold text-slate-300">
+              Número padrão do WhatsApp <span class="text-slate-500 font-normal">(opcional)</span>
+            </label>
+            <input type="tel" id="whatsappPhoneInput" inputmode="numeric" placeholder="Ex: 11999998888 (DDD + número)" class="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors" />
+            <p class="text-[11px] text-slate-400 leading-relaxed">
+              Deixe em branco para escolher o contato ou grupo na hora dentro do WhatsApp. Se informar 10 ou 11 dígitos, o código +55 é adicionado automaticamente.
+            </p>
+          </div>
+        </div>
+
+        <!-- Preview de Status Atual -->
+        <div id="alertModalSummaryBox" class="p-3.5 rounded-xl bg-slate-900/80 border border-slate-700/60 text-xs text-slate-300">
+          <!-- Preenchido dinamicamente -->
+        </div>
+
+        <div class="pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-t border-slate-700/60 sticky bottom-0 bg-slate-800">
+          <button type="button" id="testWhatsappAlertBtn" class="inline-flex items-center justify-center gap-2 px-3.5 py-2.5 bg-emerald-600/15 hover:bg-emerald-600/25 border border-emerald-500/30 text-emerald-300 rounded-xl text-xs font-semibold transition-smooth">
+            <i class="fa-brands fa-whatsapp text-sm"></i>
+            <span>Enviar Resumo Agora</span>
+          </button>
+
+          <div class="flex items-center justify-end gap-2.5">
+            <button type="button" data-close-modal="alertModal" class="px-4 py-2.5 bg-slate-700/60 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-colors">
+              Cancelar
+            </button>
+            <button type="submit" class="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-semibold transition-smooth shadow-md shadow-amber-600/20">
+              Salvar Configurações
+            </button>
+          </div>
         </div>
       </form>
 
