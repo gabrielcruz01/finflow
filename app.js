@@ -353,6 +353,7 @@
       return {
         version: 1,
         monthlyIncome: 6500.00,
+        incomes: {},
         currentPeriod: currentPeriod,
         budgets: {
           'Alimentação': 1200.00,
@@ -452,6 +453,9 @@
         }
         if (!parsed.budgets || typeof parsed.budgets !== 'object') {
           parsed.budgets = {};
+        }
+        if (!parsed.incomes || typeof parsed.incomes !== 'object') {
+          parsed.incomes = {};
         }
 
         return parsed;
@@ -636,6 +640,7 @@
       this.expensesCountBadge = document.getElementById('expensesCountBadge');
       this.expenseSearchInput = document.getElementById('expenseSearchInput');
       this.expenseCategoryFilterSelect = document.getElementById('expenseCategoryFilter');
+      this.expenseMethodFilterSelect = document.getElementById('expenseMethodFilter');
 
       // Insights & Orçamentos
       this.categoryBreakdownList = document.getElementById('categoryBreakdownList');
@@ -672,6 +677,12 @@
       this.expenseCategorySelect = document.getElementById('expenseCategorySelect');
       this.expenseMethodSelect = document.getElementById('expenseMethodSelect');
 
+      // Parcelamento
+      this.expenseInstallmentContainer = document.getElementById('expenseInstallmentContainer');
+      this.expenseIsInstallmentCheckbox = document.getElementById('expenseIsInstallmentCheckbox');
+      this.expenseInstallmentFields = document.getElementById('expenseInstallmentFields');
+      this.expenseInstallmentCount = document.getElementById('expenseInstallmentCount');
+
       // Backup & CSV
       this.exportCsvBtn = document.getElementById('exportCsvBtn');
       this.exportDataBtn = document.getElementById('exportDataBtn');
@@ -686,7 +697,7 @@
 
       // 2. Modais - Abertura
       const openIncome = () => {
-        this.incomeInput.value = Utils.formatNumberToInput(this.state.monthlyIncome);
+        this.incomeInput.value = Utils.formatNumberToInput(this.getCurrentIncome());
         this.openModal(this.incomeModal);
         this.incomeInput.focus();
         this.incomeInput.select();
@@ -716,11 +727,23 @@
         this.expenseSubmitBtn.textContent = 'Registrar Gasto';
         this.expenseAmountInput.value = '0,00';
         this.expenseDateInput.value = Utils.getTodayISO();
+        if (this.expenseIsInstallmentCheckbox) this.expenseIsInstallmentCheckbox.checked = false;
+        if (this.expenseInstallmentFields) this.expenseInstallmentFields.classList.add('hidden');
+        if (this.expenseInstallmentContainer) this.expenseInstallmentContainer.classList.remove('hidden');
         this.openModal(this.expenseModal);
         this.expenseDescriptionInput.focus();
       };
       document.getElementById('openNewExpenseModalBtn')?.addEventListener('click', openExpenseModal);
       document.getElementById('mobileNewExpenseBtn')?.addEventListener('click', openExpenseModal);
+
+      // Alternância de Parcelamento
+      this.expenseIsInstallmentCheckbox?.addEventListener('change', (e) => {
+        if (e.target.checked) {
+          this.expenseInstallmentFields?.classList.remove('hidden');
+        } else {
+          this.expenseInstallmentFields?.classList.add('hidden');
+        }
+      });
 
       // Metas / Budgeting Modal
       const openBudget = () => this.openBudgetModal();
@@ -785,6 +808,11 @@
 
       this.expenseCategoryFilterSelect?.addEventListener('change', (e) => {
         this.expenseCategoryFilter = e.target.value;
+        this.renderExpenses();
+      });
+
+      this.expenseMethodFilterSelect?.addEventListener('change', (e) => {
+        this.expenseMethodFilter = e.target.value;
         this.renderExpenses();
       });
 
@@ -926,6 +954,10 @@
       this.expenseCategorySelect.value = expense.category || 'Alimentação';
       this.expenseMethodSelect.value = expense.method || 'Pix';
 
+      if (this.expenseInstallmentContainer) {
+        this.expenseInstallmentContainer.classList.add('hidden');
+      }
+
       this.openModal(this.expenseModal);
       this.expenseDescriptionInput.focus();
     },
@@ -942,11 +974,22 @@
         return;
       }
 
+      if (!this.state.incomes || typeof this.state.incomes !== 'object') {
+        this.state.incomes = {};
+      }
+      this.state.incomes[this.state.currentPeriod] = parsedIncome;
       this.state.monthlyIncome = parsedIncome;
       Storage.save(this.state);
       this.closeModal(this.incomeModal);
       this.render();
-      Toast.show(`Renda mensal atualizada para ${Utils.formatCurrency(parsedIncome)}.`, 'success');
+      Toast.show(`Renda de ${Utils.formatPeriod(this.state.currentPeriod)} atualizada para ${Utils.formatCurrency(parsedIncome)}.`, 'success');
+    },
+
+    getCurrentIncome() {
+      if (this.state.incomes && typeof this.state.incomes === 'object' && this.state.incomes[this.state.currentPeriod] !== undefined) {
+        return this.state.incomes[this.state.currentPeriod];
+      }
+      return this.state.monthlyIncome || 0;
     },
 
     handleBillSubmit(e) {
@@ -1043,8 +1086,53 @@
           };
           Toast.show(`Lançamento "${description}" atualizado!`, 'success');
         }
+      } else if (this.expenseIsInstallmentCheckbox?.checked) {
+        // Modo Criação Parcelada
+        const count = parseInt(this.expenseInstallmentCount?.value || '2', 10);
+        const installmentType = this.expenseForm.querySelector('input[name="installmentAmountType"]:checked')?.value || 'per_installment';
+
+        let amountPerInstallment = amount;
+        let diff = 0;
+
+        if (installmentType === 'total') {
+          amountPerInstallment = Math.floor((amount / count) * 100) / 100;
+          diff = Math.round((amount - (amountPerInstallment * count)) * 100) / 100;
+        }
+
+        const groupId = Utils.generateUUID();
+        const [startYear, startMonth, startDay] = date.split('-').map(Number);
+        const newInstallments = [];
+
+        for (let i = 0; i < count; i++) {
+          const monthIndex = startMonth - 1 + i;
+          const targetYear = startYear + Math.floor(monthIndex / 12);
+          const targetMonth = (monthIndex % 12) + 1;
+          const daysInMonth = new Date(targetYear, targetMonth, 0).getDate();
+          const targetDay = Math.min(startDay, daysInMonth);
+          const targetDateISO = `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(targetDay).padStart(2, '0')}`;
+
+          const instAmount = (i === 0 && installmentType === 'total')
+            ? Math.round((amountPerInstallment + diff) * 100) / 100
+            : amountPerInstallment;
+
+          newInstallments.push({
+            id: Utils.generateUUID(),
+            description: `${description} (${i + 1}/${count})`,
+            amount: instAmount,
+            date: targetDateISO,
+            category,
+            method,
+            installmentGroupId: groupId,
+            installmentNumber: i + 1,
+            totalInstallments: count,
+            createdAt: new Date().toISOString()
+          });
+        }
+
+        this.state.expenses.unshift(...newInstallments);
+        Toast.show(`Compra parcelada em ${count}x de ${Utils.formatCurrency(amountPerInstallment)} cadastrada!`, 'success');
       } else {
-        // Modo Criação
+        // Modo Criação Simples
         const newExpense = {
           id: Utils.generateUUID(),
           description,
@@ -1121,7 +1209,7 @@
         const periodBills = this.state.bills.filter(b => b.dueDate.startsWith(period));
         const periodExpenses = this.state.expenses.filter(e => e.date.startsWith(period));
 
-        const income = this.state.monthlyIncome || 0;
+        const income = this.getCurrentIncome();
         const billsTotal = periodBills.reduce((acc, b) => acc + (b.amount || 0), 0);
         const expensesTotal = periodExpenses.reduce((acc, e) => acc + (e.amount || 0), 0);
         const balance = income - billsTotal - expensesTotal;
@@ -1233,6 +1321,7 @@
           this.state = {
             version: parsed.version || 1,
             monthlyIncome: typeof parsed.monthlyIncome === 'number' ? parsed.monthlyIncome : 0,
+            incomes: (parsed.incomes && typeof parsed.incomes === 'object') ? parsed.incomes : {},
             currentPeriod: parsed.currentPeriod || Utils.getCurrentPeriodISO(),
             budgets: (parsed.budgets && typeof parsed.budgets === 'object') ? parsed.budgets : {},
             bills: Array.isArray(parsed.bills) ? parsed.bills : [],
@@ -1282,7 +1371,7 @@
       const periodBills = this.state.bills.filter(b => b.dueDate.startsWith(period));
       const periodExpenses = this.state.expenses.filter(e => e.date.startsWith(period));
 
-      const income = this.state.monthlyIncome || 0;
+      const income = this.getCurrentIncome();
       const billsTotal = periodBills.reduce((acc, b) => acc + (b.amount || 0), 0);
       const billsPaid = periodBills.filter(b => b.paid).length;
       const billsPending = periodBills.length - billsPaid;
@@ -1354,7 +1443,7 @@
       const periodBills = this.state.bills.filter(b => b.dueDate.startsWith(period));
       const periodExpenses = this.state.expenses.filter(e => e.date.startsWith(period));
 
-      const income = this.state.monthlyIncome || 0;
+      const income = this.getCurrentIncome();
       const billsTotal = periodBills.reduce((acc, b) => acc + (b.amount || 0), 0);
       const expensesTotal = periodExpenses.reduce((acc, e) => acc + (e.amount || 0), 0);
       const balance = income - billsTotal - expensesTotal;
@@ -1460,9 +1549,10 @@
       }
 
       const spentByCategory = {};
-      periodExpenses.forEach(exp => {
-        const cat = exp.category || 'Outros';
-        spentByCategory[cat] = (spentByCategory[cat] || 0) + (exp.amount || 0);
+      const periodBills = this.state.bills.filter(b => b.dueDate.startsWith(period));
+      [...periodExpenses, ...periodBills].forEach(item => {
+        const cat = item.category || 'Outros';
+        spentByCategory[cat] = (spentByCategory[cat] || 0) + (item.amount || 0);
       });
 
       let html = '';
@@ -1720,6 +1810,10 @@
         expenses = expenses.filter(e => e.category === this.expenseCategoryFilter);
       }
 
+      if (this.expenseMethodFilter && this.expenseMethodFilter !== 'all') {
+        expenses = expenses.filter(e => e.method === this.expenseMethodFilter);
+      }
+
       if (this.expenseSearchQuery) {
         expenses = expenses.filter(e => e.description.toLowerCase().includes(this.expenseSearchQuery));
       }
@@ -1758,9 +1852,17 @@
               </div>
 
               <div class="min-w-0">
-                <h4 class="text-sm font-semibold text-slate-100 truncate">
-                  ${Utils.escapeHTML(expense.description)}
-                </h4>
+                <div class="flex items-center gap-2">
+                  <h4 class="text-sm font-semibold text-slate-100 truncate">
+                    ${Utils.escapeHTML(expense.description)}
+                  </h4>
+                  ${expense.installmentGroupId ? `
+                    <span class="px-1.5 py-0.5 text-[10px] font-semibold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 rounded-md inline-flex items-center gap-1 flex-shrink-0" title="Compra Parcelada">
+                      <i class="fa-solid fa-layer-group text-[9px]"></i>
+                      ${expense.installmentNumber}/${expense.totalInstallments}
+                    </span>
+                  ` : ''}
+                </div>
                 <div class="flex items-center gap-2 mt-0.5 text-xs text-slate-400 flex-wrap">
                   <span>${Utils.formatDate(expense.date)}</span>
                   <span>•</span>
@@ -1817,14 +1919,15 @@
     // ========================================================================
     renderChartsAndInsights() {
       const period = this.state.currentPeriod;
+      const periodBills = this.state.bills.filter(b => b.dueDate.startsWith(period));
       const periodExpenses = this.state.expenses.filter(e => e.date.startsWith(period));
 
       const categoryTotals = {};
       let totalGastos = 0;
 
-      periodExpenses.forEach(exp => {
-        const cat = exp.category || 'Outros';
-        const val = exp.amount || 0;
+      [...periodExpenses, ...periodBills].forEach(item => {
+        const cat = item.category || 'Outros';
+        const val = item.amount || 0;
         categoryTotals[cat] = (categoryTotals[cat] || 0) + val;
         totalGastos += val;
       });
