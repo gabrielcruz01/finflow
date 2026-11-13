@@ -3,7 +3,7 @@
  * Estratégia de Caching Inteligente com Stale-While-Revalidate para CDNs
  */
 
-const CACHE_NAME = 'finflow-v1.0.3';
+const CACHE_NAME = 'finflow-v1.0.6';
 
 const PRECACHE_ASSETS = [
   './',

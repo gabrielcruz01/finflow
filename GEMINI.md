@@ -22,4 +22,6 @@
 - [x] Máscara de entrada monetária em tempo real nos formulários.
 - [x] Orçamento por categoria com alerta visual de teto de gastos (Budgeting).
 - [x] Projeção de ritmo de queima orçamentária (Burn-rate diário).
-- [x] Alertas de vencimento de contas fixas com envio formatado para WhatsApp e controle de ativação/desativação.
+- [x] Alertas de vencimento de contas fixas com controle de ativação/desativação e notificações locais.
+- [x] Gerenciamento de múltiplas fontes de renda por mês (tipos de renda, data opcional, edição/exclusão e replicação do mês anterior).
+- [x] Planejamento e simulação de compras futuras (parcelado/à vista e meta mensal de economia, projeção de orçamento futuro, recomendação inteligente e efetivação com 1 clique).

@@ -45,6 +45,17 @@
     'Dinheiro': 'fa-money-bill-wave text-emerald-400'
   };
 
+  const INCOME_TYPE_META = {
+    'Salário': { icon: 'fa-briefcase', color: '#10b981' },
+    'Freelance / Extra': { icon: 'fa-laptop-code', color: '#6366f1' },
+    'Benefícios / Auxílio': { icon: 'fa-gift', color: '#06b6d4' },
+    'Investimentos / Dividendos': { icon: 'fa-chart-line', color: '#f59e0b' },
+    'Bônus / 13º': { icon: 'fa-award', color: '#a855f7' },
+    'Vendas / Reembolso': { icon: 'fa-hand-holding-dollar', color: '#3b82f6' },
+    'Aluguel / Renda Passiva': { icon: 'fa-house-chimney', color: '#ec4899' },
+    'Outros': { icon: 'fa-coins', color: '#64748b' }
+  };
+
   // ==========================================================================
   // 2. FUNÇÕES UTILITÁRIAS & DEFENSIVIDADE
   // ==========================================================================
@@ -185,6 +196,31 @@
     },
 
     /**
+     * Ajusta uma data ISO (YYYY-MM-DD) para outro mês (YYYY-MM) preservando o dia válido
+     */
+    shiftDateToPeriod(dateISO, targetPeriod) {
+      if (!dateISO || typeof dateISO !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dateISO)) {
+        return null;
+      }
+      const [targetYear, targetMonth] = targetPeriod.split('-').map(Number);
+      const originalDay = parseInt(dateISO.split('-')[2], 10) || 1;
+      const daysInTarget = new Date(targetYear, targetMonth, 0).getDate();
+      const clampedDay = Math.min(originalDay, daysInTarget);
+      return `${targetPeriod}-${String(clampedDay).padStart(2, '0')}`;
+    },
+
+    /**
+     * Retorna o período YYYY-MM de uma entrada de renda
+     */
+    getIncomePeriod(entry) {
+      if (!entry || typeof entry !== 'object') return '';
+      if (typeof entry.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(entry.date)) {
+        return entry.date.slice(0, 7);
+      }
+      return typeof entry.period === 'string' ? entry.period : '';
+    },
+
+    /**
      * Sanitização estrita contra injeção de HTML / XSS
      */
     escapeHTML(str) {
@@ -279,29 +315,14 @@
       const allowedDays = [0, 1, 3, 5, 7];
       const parsedDays = Number(source.daysBefore);
       const daysBefore = allowedDays.includes(parsedDays) ? parsedDays : 3;
-      const whatsappPhone = typeof source.whatsappPhone === 'string'
-        ? source.whatsappPhone.replace(/\D/g, '').slice(0, 15)
-        : '';
 
       return {
         enabled: typeof source.enabled === 'boolean' ? source.enabled : true,
         daysBefore,
-        whatsappEnabled: typeof source.whatsappEnabled === 'boolean' ? source.whatsappEnabled : true,
-        whatsappPhone,
         browserNotify: typeof source.browserNotify === 'boolean' ? source.browserNotify : false,
         lastNotifiedDate: typeof source.lastNotifiedDate === 'string' ? source.lastNotifiedDate : null,
         dismissedDate: typeof source.dismissedDate === 'string' ? source.dismissedDate : null
       };
-    },
-
-    formatWhatsappPhone(rawPhone) {
-      const digits = String(rawPhone || '').replace(/\D/g, '');
-      if (!digits) return '';
-      const cleaned = (digits.length === 12 && digits.startsWith('0')) ? digits.slice(1) : digits;
-      if (cleaned.length === 10 || cleaned.length === 11) {
-        return `55${cleaned}`;
-      }
-      return cleaned;
     }
   };
 
@@ -401,15 +422,25 @@
       const todayISO = Utils.getTodayISO();
 
       return {
-        version: 1,
-        monthlyIncome: 6500.00,
-        incomes: {},
+        version: 2,
         currentPeriod: currentPeriod,
+        incomeEntries: [
+          {
+            id: Utils.generateUUID(),
+            title: 'Salário Principal',
+            type: 'Salário',
+            amount: 6500.00,
+            date: `${currentPeriod}-05`,
+            period: currentPeriod,
+            createdAt: new Date().toISOString()
+          }
+        ],
         budgets: {
           'Alimentação': 1200.00,
           'Transporte': 350.00,
           'Lazer': 250.00
         },
+        plans: [],
         alertSettings: Utils.normalizeAlertSettings(),
         bills: [
           {
@@ -481,6 +512,129 @@
       };
     },
 
+    normalizeIncomeEntry(raw, fallbackPeriod) {
+      if (!raw || typeof raw !== 'object') return null;
+
+      const title = (typeof raw.title === 'string' && raw.title.trim())
+        ? raw.title.trim()
+        : 'Renda';
+      const type = INCOME_TYPE_META[raw.type] ? raw.type : 'Outros';
+      const parsedAmount = Number(raw.amount);
+      const amount = (Number.isFinite(parsedAmount) && parsedAmount >= 0)
+        ? Math.round(parsedAmount * 100) / 100
+        : 0;
+
+      const isValidDate = typeof raw.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.date);
+      const date = isValidDate ? raw.date : null;
+      const isValidPeriod = typeof raw.period === 'string' && /^\d{4}-\d{2}$/.test(raw.period);
+      const period = date ? date.slice(0, 7) : (isValidPeriod ? raw.period : fallbackPeriod);
+
+      return {
+        id: (typeof raw.id === 'string' && raw.id.trim()) ? raw.id : Utils.generateUUID(),
+        title,
+        type,
+        amount,
+        date,
+        period,
+        createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : new Date().toISOString(),
+        ...(typeof raw.updatedAt === 'string' ? { updatedAt: raw.updatedAt } : {})
+      };
+    },
+
+    normalizeIncomeEntries(parsed) {
+      const fallbackPeriod = (typeof parsed.currentPeriod === 'string' && /^\d{4}-\d{2}$/.test(parsed.currentPeriod))
+        ? parsed.currentPeriod
+        : Utils.getCurrentPeriodISO();
+
+      if (Array.isArray(parsed.incomeEntries)) {
+        return parsed.incomeEntries
+          .map(entry => this.normalizeIncomeEntry(entry, fallbackPeriod))
+          .filter(Boolean);
+      }
+
+      // Migração transparente do formato legado (monthlyIncome / incomes[YYYY-MM])
+      const migrated = [];
+      const legacyIncomes = (parsed.incomes && typeof parsed.incomes === 'object') ? parsed.incomes : {};
+      const periodsSeen = new Set();
+
+      Object.entries(legacyIncomes).forEach(([period, val]) => {
+        if (!/^\d{4}-\d{2}$/.test(period)) return;
+        periodsSeen.add(period);
+        const amount = Number(val);
+        if (Number.isFinite(amount) && amount > 0) {
+          migrated.push(this.normalizeIncomeEntry({
+            title: 'Renda Mensal',
+            type: 'Salário',
+            amount,
+            date: null,
+            period
+          }, fallbackPeriod));
+        }
+      });
+
+      const legacyMonthly = Number(parsed.monthlyIncome);
+      if (!periodsSeen.has(fallbackPeriod) && Number.isFinite(legacyMonthly) && legacyMonthly > 0) {
+        migrated.push(this.normalizeIncomeEntry({
+          title: 'Renda Mensal',
+          type: 'Salário',
+          amount: legacyMonthly,
+          date: null,
+          period: fallbackPeriod
+        }, fallbackPeriod));
+      }
+
+      return migrated.filter(Boolean);
+    },
+
+    normalizePlan(raw) {
+      if (!raw || typeof raw !== 'object') return null;
+
+      const title = (typeof raw.title === 'string' && raw.title.trim())
+        ? raw.title.trim()
+        : 'Planejamento';
+      const parsedTarget = Number(raw.targetAmount);
+      const targetAmount = (Number.isFinite(parsedTarget) && parsedTarget >= 0)
+        ? Math.round(parsedTarget * 100) / 100
+        : 0;
+      const parsedSaved = Number(raw.savedAmount);
+      const savedAmount = (Number.isFinite(parsedSaved) && parsedSaved >= 0)
+        ? Math.round(parsedSaved * 100) / 100
+        : 0;
+      const category = CATEGORY_COLORS[raw.category] ? raw.category : 'Compras';
+      const mode = raw.mode === 'save' ? 'save' : 'installment';
+      const parsedInst = parseInt(raw.installments, 10);
+      const installments = (Number.isFinite(parsedInst) && parsedInst >= 1)
+        ? Math.min(36, parsedInst)
+        : 10;
+      const parsedMonthly = Number(raw.monthlyContribution);
+      const monthlyContribution = (Number.isFinite(parsedMonthly) && parsedMonthly >= 0)
+        ? Math.round(parsedMonthly * 100) / 100
+        : 0;
+      const paymentMethod = METHOD_ICONS[raw.paymentMethod] ? raw.paymentMethod : 'Cartão de Crédito';
+      const status = raw.status === 'completed' ? 'completed' : 'active';
+
+      return {
+        id: (typeof raw.id === 'string' && raw.id.trim()) ? raw.id : Utils.generateUUID(),
+        title,
+        targetAmount,
+        savedAmount,
+        category,
+        mode,
+        installments,
+        monthlyContribution,
+        paymentMethod,
+        status,
+        completedAt: typeof raw.completedAt === 'string' ? raw.completedAt : null,
+        createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : new Date().toISOString(),
+        ...(typeof raw.updatedAt === 'string' ? { updatedAt: raw.updatedAt } : {})
+      };
+    },
+
+    normalizePlans(rawPlans) {
+      if (!Array.isArray(rawPlans)) return [];
+      return rawPlans.map(p => this.normalizePlan(p)).filter(Boolean);
+    },
+
     load() {
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
@@ -494,21 +648,27 @@
           throw new Error('Estado inválido');
         }
 
+        const wasLegacyIncome = !Array.isArray(parsed.incomeEntries);
+
         if (!Array.isArray(parsed.bills)) parsed.bills = [];
         if (!Array.isArray(parsed.expenses)) parsed.expenses = [];
-        if (typeof parsed.monthlyIncome !== 'number' || isNaN(parsed.monthlyIncome)) {
-          parsed.monthlyIncome = 0;
-        }
-        if (!parsed.currentPeriod) {
+        if (!parsed.currentPeriod || !/^\d{4}-\d{2}$/.test(parsed.currentPeriod)) {
           parsed.currentPeriod = Utils.getCurrentPeriodISO();
         }
         if (!parsed.budgets || typeof parsed.budgets !== 'object') {
           parsed.budgets = {};
         }
-        if (!parsed.incomes || typeof parsed.incomes !== 'object') {
-          parsed.incomes = {};
-        }
+
+        parsed.incomeEntries = this.normalizeIncomeEntries(parsed);
+        parsed.plans = this.normalizePlans(parsed.plans);
+        delete parsed.monthlyIncome;
+        delete parsed.incomes;
+        parsed.version = 2;
         parsed.alertSettings = Utils.normalizeAlertSettings(parsed.alertSettings);
+
+        if (wasLegacyIncome) {
+          this.save(parsed);
+        }
 
         return parsed;
       } catch (err) {
@@ -647,6 +807,9 @@
       Utils.attachCurrencyMask(this.incomeInput);
       Utils.attachCurrencyMask(this.billAmountInput);
       Utils.attachCurrencyMask(this.expenseAmountInput);
+      Utils.attachCurrencyMask(this.planTargetAmountInput);
+      Utils.attachCurrencyMask(this.planSavedAmountInput);
+      Utils.attachCurrencyMask(this.planMonthlyContributionInput);
     },
 
     cacheDOMElements() {
@@ -657,6 +820,7 @@
 
       // KPIs
       this.kpiIncome = document.getElementById('kpiIncome');
+      this.kpiIncomeSubtitle = document.getElementById('kpiIncomeSubtitle');
       this.kpiBillsTotal = document.getElementById('kpiBillsTotal');
       this.kpiBillsStatusSubtitle = document.getElementById('kpiBillsStatusSubtitle');
       this.kpiBillsProgressPercent = document.getElementById('kpiBillsProgressPercent');
@@ -694,15 +858,29 @@
       this.expenseCategoryFilterSelect = document.getElementById('expenseCategoryFilter');
       this.expenseMethodFilterSelect = document.getElementById('expenseMethodFilter');
 
-      // Insights & Orçamentos
+      // Insights, Orçamentos & Planejamento
       this.categoryBreakdownList = document.getElementById('categoryBreakdownList');
       this.methodsBreakdownContainer = document.getElementById('methodsBreakdownContainer');
       this.budgetBreakdownList = document.getElementById('budgetBreakdownList');
+      this.planningBreakdownList = document.getElementById('planningBreakdownList');
 
       // Modais & Edição
       this.incomeModal = document.getElementById('incomeModal');
+      this.incomeModalSubtitle = document.getElementById('incomeModalSubtitle');
+      this.incomeModalBody = document.getElementById('incomeModalBody');
+      this.incomeModalTotal = document.getElementById('incomeModalTotal');
+      this.incomeModalCountBadge = document.getElementById('incomeModalCountBadge');
+      this.replicateIncomesBtn = document.getElementById('replicateIncomesBtn');
       this.incomeForm = document.getElementById('incomeForm');
+      this.incomeFormTitle = document.getElementById('incomeFormTitle');
+      this.incomeEditId = document.getElementById('incomeEditId');
+      this.incomeTitleInput = document.getElementById('incomeTitleInput');
+      this.incomeTypeSelect = document.getElementById('incomeTypeSelect');
       this.incomeInput = document.getElementById('incomeInput');
+      this.incomeDateInput = document.getElementById('incomeDateInput');
+      this.cancelIncomeEditBtn = document.getElementById('cancelIncomeEditBtn');
+      this.incomeSubmitBtn = document.getElementById('incomeSubmitBtn');
+      this.incomesListContainer = document.getElementById('incomesListContainer');
 
       this.budgetModal = document.getElementById('budgetModal');
       this.budgetForm = document.getElementById('budgetForm');
@@ -741,7 +919,7 @@
       this.importDataBtn = document.getElementById('importDataBtn');
       this.importFileInput = document.getElementById('importFileInput');
 
-      // Alertas & WhatsApp
+      // Alertas de Vencimento
       this.openAlertModalBtn = document.getElementById('openAlertModalBtn');
       this.headerAlertBadge = document.getElementById('headerAlertBadge');
       this.mobileAlertBtn = document.getElementById('mobileAlertBtn');
@@ -755,7 +933,6 @@
       this.alertsBannerBadges = document.getElementById('alertsBannerBadges');
       this.alertsBannerSubtitle = document.getElementById('alertsBannerSubtitle');
       this.alertsBannerList = document.getElementById('alertsBannerList');
-      this.sendAlertsWhatsappBtn = document.getElementById('sendAlertsWhatsappBtn');
       this.openAlertsFromBannerBtn = document.getElementById('openAlertsFromBannerBtn');
       this.dismissAlertsBannerBtn = document.getElementById('dismissAlertsBannerBtn');
 
@@ -765,11 +942,32 @@
       this.alertOptionsGroup = document.getElementById('alertOptionsGroup');
       this.alertDaysBeforeSelect = document.getElementById('alertDaysBeforeSelect');
       this.alertBrowserNotifyToggle = document.getElementById('alertBrowserNotifyToggle');
-      this.whatsappEnabledToggle = document.getElementById('whatsappEnabledToggle');
-      this.whatsappOptionsGroup = document.getElementById('whatsappOptionsGroup');
-      this.whatsappPhoneInput = document.getElementById('whatsappPhoneInput');
       this.alertModalSummaryBox = document.getElementById('alertModalSummaryBox');
-      this.testWhatsappAlertBtn = document.getElementById('testWhatsappAlertBtn');
+
+      // Planejamento de Compras
+      this.planningModal = document.getElementById('planningModal');
+      this.planningModalBody = document.getElementById('planningModalBody');
+      this.planningForm = document.getElementById('planningForm');
+      this.planningFormTitle = document.getElementById('planningFormTitle');
+      this.planEditId = document.getElementById('planEditId');
+      this.planModeInput = document.getElementById('planModeInput');
+      this.planModeBtns = document.querySelectorAll('.plan-mode-btn');
+      this.cancelPlanningEditBtn = document.getElementById('cancelPlanningEditBtn');
+      this.planTitleInput = document.getElementById('planTitleInput');
+      this.planCategorySelect = document.getElementById('planCategorySelect');
+      this.planTargetAmountInput = document.getElementById('planTargetAmountInput');
+      this.planSavedAmountInput = document.getElementById('planSavedAmountInput');
+      this.planInstallmentFields = document.getElementById('planInstallmentFields');
+      this.planInstallmentsSelect = document.getElementById('planInstallmentsSelect');
+      this.planPaymentMethodSelect = document.getElementById('planPaymentMethodSelect');
+      this.planSaveFields = document.getElementById('planSaveFields');
+      this.planMonthlyContributionInput = document.getElementById('planMonthlyContributionInput');
+      this.planPresetMonthBtns = document.querySelectorAll('[data-plan-preset-months]');
+      this.planUseFreeBalanceBtn = document.getElementById('planUseFreeBalanceBtn');
+      this.planSimulationPreview = document.getElementById('planSimulationPreview');
+      this.planningSubmitBtn = document.getElementById('planningSubmitBtn');
+      this.plansCountBadge = document.getElementById('plansCountBadge');
+      this.plansListContainer = document.getElementById('plansListContainer');
     },
 
     bindEvents() {
@@ -778,12 +976,7 @@
       this.nextMonthBtn?.addEventListener('click', () => this.changePeriod(1));
 
       // 2. Modais - Abertura
-      const openIncome = () => {
-        this.incomeInput.value = Utils.formatNumberToInput(this.getCurrentIncome());
-        this.openModal(this.incomeModal);
-        this.incomeInput.focus();
-        this.incomeInput.select();
-      };
+      const openIncome = () => this.openIncomeModal();
 
       document.getElementById('openIncomeModalBtn')?.addEventListener('click', openIncome);
       document.getElementById('quickEditIncomeBtn')?.addEventListener('click', openIncome);
@@ -833,7 +1026,12 @@
       document.getElementById('openBudgetHeaderBtn')?.addEventListener('click', openBudget);
       document.getElementById('mobileBudgetBtn')?.addEventListener('click', openBudget);
 
-      // Alertas de Vencimento & WhatsApp Modal
+      // Planejamento de Compras Modal
+      const openPlanning = () => this.openPlanningModal();
+      document.getElementById('openPlanningHeaderBtn')?.addEventListener('click', openPlanning);
+      document.getElementById('openPlanningModalBtn')?.addEventListener('click', openPlanning);
+
+      // Alertas de Vencimento Modal
       const openAlerts = () => this.openAlertModal();
       this.openAlertModalBtn?.addEventListener('click', openAlerts);
       this.mobileAlertBtn?.addEventListener('click', openAlerts);
@@ -858,7 +1056,11 @@
 
       window.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
-          [this.incomeModal, this.billModal, this.expenseModal, this.budgetModal, this.alertModal].forEach(m => {
+          if (ConfirmDialog.modal && !ConfirmDialog.modal.classList.contains('hidden')) {
+            ConfirmDialog.close(false);
+            return;
+          }
+          [this.incomeModal, this.billModal, this.expenseModal, this.budgetModal, this.alertModal, this.planningModal].forEach(m => {
             if (m && !m.classList.contains('hidden')) this.closeModal(m);
           });
         }
@@ -866,17 +1068,50 @@
 
       // 4. Submissão de Formulários
       this.incomeForm?.addEventListener('submit', (e) => this.handleIncomeSubmit(e));
+      this.cancelIncomeEditBtn?.addEventListener('click', () => this.resetIncomeForm());
+      this.replicateIncomesBtn?.addEventListener('click', () => this.replicateIncomesFromPreviousMonth());
       this.billForm?.addEventListener('submit', (e) => this.handleBillSubmit(e));
       this.expenseForm?.addEventListener('submit', (e) => this.handleExpenseSubmit(e));
       this.budgetForm?.addEventListener('submit', (e) => this.handleBudgetSubmit(e));
       this.alertForm?.addEventListener('submit', (e) => this.handleAlertSubmit(e));
+      this.planningForm?.addEventListener('submit', (e) => this.handlePlanningSubmit(e));
+      this.cancelPlanningEditBtn?.addEventListener('click', () => {
+        this.resetPlanningForm();
+        this.updatePlanSimulationPreview();
+      });
 
-      // Controles dinâmicos de Alertas & WhatsApp
+      // Controles dinâmicos do Simulador de Planejamento
+      this.planModeBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          this.setPlanMode(btn.getAttribute('data-plan-mode') || 'installment');
+        });
+      });
+
+      [
+        this.planTitleInput,
+        this.planCategorySelect,
+        this.planTargetAmountInput,
+        this.planSavedAmountInput,
+        this.planInstallmentsSelect,
+        this.planPaymentMethodSelect,
+        this.planMonthlyContributionInput
+      ].forEach(el => {
+        el?.addEventListener('input', () => this.updatePlanSimulationPreview());
+        el?.addEventListener('change', () => this.updatePlanSimulationPreview());
+      });
+
+      this.planPresetMonthBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const months = parseInt(btn.getAttribute('data-plan-preset-months'), 10);
+          this.applyPlanMonthsPreset(months);
+        });
+      });
+
+      this.planUseFreeBalanceBtn?.addEventListener('click', () => this.applyFreeBalanceToPlan());
+
+      // Controles dinâmicos de Alertas de Vencimento
       this.alertEnabledToggle?.addEventListener('change', () => this.updateAlertModalControlsState());
       this.alertDaysBeforeSelect?.addEventListener('change', () => this.updateAlertModalPreview());
-      this.whatsappEnabledToggle?.addEventListener('change', () => this.updateAlertModalControlsState());
-      this.sendAlertsWhatsappBtn?.addEventListener('click', () => this.sendDueAlertsToWhatsApp());
-      this.testWhatsappAlertBtn?.addEventListener('click', () => this.sendModalSummaryToWhatsApp());
       this.dismissAlertsBannerBtn?.addEventListener('click', () => this.dismissAlertsForToday());
 
       // 5. Filtros de Contas
@@ -1061,33 +1296,289 @@
     },
 
     // ========================================================================
-    // AÇÕES DE FORMULÁRIO (CRIAÇÃO E ATUALIZAÇÃO)
+    // GERENCIAMENTO DE MÚLTIPLAS FONTES DE RENDA
     // ========================================================================
-    handleIncomeSubmit(e) {
-      e.preventDefault();
-      const parsedIncome = Utils.parseCurrency(this.incomeInput.value);
+    getPeriodIncomes(period = this.state.currentPeriod) {
+      const entries = Array.isArray(this.state.incomeEntries) ? this.state.incomeEntries : [];
+      return entries
+        .filter(entry => Utils.getIncomePeriod(entry) === period)
+        .slice()
+        .sort((a, b) => {
+          if (a.date && b.date) return a.date.localeCompare(b.date);
+          if (a.date) return -1;
+          if (b.date) return 1;
+          return (a.createdAt || '').localeCompare(b.createdAt || '');
+        });
+    },
 
-      if (parsedIncome < 0) {
-        Toast.show('O valor da renda não pode ser negativo.', 'warning');
+    getCurrentIncome(period = this.state.currentPeriod) {
+      return this.getPeriodIncomes(period).reduce((sum, entry) => sum + (entry.amount || 0), 0);
+    },
+
+    openIncomeModal() {
+      this.resetIncomeForm();
+      this.renderIncomeModal();
+      this.openModal(this.incomeModal);
+      this.incomeTitleInput?.focus();
+    },
+
+    resetIncomeForm() {
+      this.incomeForm?.reset();
+      if (this.incomeEditId) this.incomeEditId.value = '';
+      if (this.incomeTypeSelect) this.incomeTypeSelect.value = 'Salário';
+      if (this.incomeInput) this.incomeInput.value = '0,00';
+      if (this.incomeDateInput) this.incomeDateInput.value = '';
+      if (this.incomeFormTitle) this.incomeFormTitle.textContent = 'Adicionar Fonte de Renda';
+      if (this.cancelIncomeEditBtn) this.cancelIncomeEditBtn.classList.add('hidden');
+      if (this.incomeSubmitBtn) {
+        this.incomeSubmitBtn.innerHTML = '<i class="fa-solid fa-plus"></i><span>Adicionar Renda</span>';
+      }
+    },
+
+    openEditIncomeModal(incomeId) {
+      const entry = (this.state.incomeEntries || []).find(item => item.id === incomeId);
+      if (!entry) return;
+
+      if (this.incomeEditId) this.incomeEditId.value = entry.id;
+      if (this.incomeTitleInput) this.incomeTitleInput.value = entry.title;
+      if (this.incomeTypeSelect) this.incomeTypeSelect.value = INCOME_TYPE_META[entry.type] ? entry.type : 'Outros';
+      if (this.incomeInput) this.incomeInput.value = Utils.formatNumberToInput(entry.amount);
+      if (this.incomeDateInput) this.incomeDateInput.value = entry.date || '';
+
+      if (this.incomeFormTitle) this.incomeFormTitle.textContent = 'Editar Fonte de Renda';
+      if (this.cancelIncomeEditBtn) this.cancelIncomeEditBtn.classList.remove('hidden');
+      if (this.incomeSubmitBtn) {
+        this.incomeSubmitBtn.innerHTML = '<i class="fa-solid fa-check"></i><span>Salvar Alterações</span>';
+      }
+
+      if (this.incomeModalBody) this.incomeModalBody.scrollTop = 0;
+      this.incomeTitleInput?.focus();
+    },
+
+    renderIncomeModal() {
+      const period = this.state.currentPeriod;
+      const periodIncomes = this.getPeriodIncomes(period);
+      const total = periodIncomes.reduce((sum, item) => sum + (item.amount || 0), 0);
+
+      const prevPeriod = Utils.shiftPeriod(period, -1);
+      const prevIncomes = this.getPeriodIncomes(prevPeriod);
+
+      if (this.incomeModalSubtitle) {
+        this.incomeModalSubtitle.textContent = `Mês de referência: ${Utils.formatPeriod(period)}`;
+      }
+      if (this.incomeModalTotal) {
+        this.incomeModalTotal.textContent = Utils.formatCurrency(total);
+      }
+      if (this.incomeModalCountBadge) {
+        const count = periodIncomes.length;
+        this.incomeModalCountBadge.textContent = `${count} ${count === 1 ? 'renda' : 'rendas'}`;
+      }
+
+      if (this.replicateIncomesBtn) {
+        if (prevIncomes.length > 0) {
+          this.replicateIncomesBtn.classList.remove('hidden');
+          this.replicateIncomesBtn.classList.add('inline-flex');
+        } else {
+          this.replicateIncomesBtn.classList.add('hidden');
+          this.replicateIncomesBtn.classList.remove('inline-flex');
+        }
+      }
+
+      if (!this.incomesListContainer) return;
+
+      if (periodIncomes.length === 0) {
+        this.incomesListContainer.innerHTML = `
+          <div class="p-5 rounded-xl bg-slate-900/50 border border-dashed border-slate-700 text-center space-y-2">
+            <div class="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 mx-auto flex items-center justify-center text-slate-500">
+              <i class="fa-solid fa-hand-holding-dollar"></i>
+            </div>
+            <p class="text-xs font-semibold text-slate-300">Nenhuma renda cadastrada em ${Utils.formatPeriod(period)}</p>
+            <p class="text-[11px] text-slate-400">Adicione suas fontes de renda acima${prevIncomes.length > 0 ? ' ou copie do mês anterior.' : '.'}</p>
+          </div>
+        `;
         return;
       }
 
-      if (!this.state.incomes || typeof this.state.incomes !== 'object') {
-        this.state.incomes = {};
-      }
-      this.state.incomes[this.state.currentPeriod] = parsedIncome;
-      this.state.monthlyIncome = parsedIncome;
-      Storage.save(this.state);
-      this.closeModal(this.incomeModal);
-      this.render();
-      Toast.show(`Renda de ${Utils.formatPeriod(this.state.currentPeriod)} atualizada para ${Utils.formatCurrency(parsedIncome)}.`, 'success');
+      let html = '';
+      periodIncomes.forEach(entry => {
+        const meta = INCOME_TYPE_META[entry.type] || INCOME_TYPE_META['Outros'];
+        const dateText = entry.date ? `Recebida em ${Utils.formatDate(entry.date)}` : 'Vinculada ao mês';
+
+        html += `
+          <div class="flex items-center justify-between gap-3 p-3 bg-slate-900/70 hover:bg-slate-900 border border-slate-700/60 hover:border-slate-600 rounded-xl transition-smooth">
+            <div class="flex items-center gap-3 min-w-0 flex-1">
+              <div class="w-9 h-9 rounded-xl flex items-center justify-center text-sm flex-shrink-0" style="background-color: ${meta.color}20; color: ${meta.color};">
+                <i class="fa-solid ${meta.icon}"></i>
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <p class="text-xs sm:text-sm font-semibold text-slate-100 truncate">${Utils.escapeHTML(entry.title)}</p>
+                  <span class="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-800 text-slate-300 border border-slate-700/80">${Utils.escapeHTML(entry.type)}</span>
+                </div>
+                <p class="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1">
+                  <i class="fa-regular fa-calendar text-[10px]"></i>
+                  <span>${dateText}</span>
+                </p>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2 flex-shrink-0">
+              <span class="text-xs sm:text-sm font-bold text-emerald-400 whitespace-nowrap">
+                ${Utils.formatCurrency(entry.amount)}
+              </span>
+              <div class="flex items-center gap-0.5">
+                <button type="button" data-edit-income-id="${entry.id}" class="action-icon-btn text-slate-400 hover:text-indigo-400 hover:bg-slate-800" title="Editar renda">
+                  <i class="fa-solid fa-pen text-xs"></i>
+                </button>
+                <button type="button" data-delete-income-id="${entry.id}" class="action-icon-btn text-slate-500 hover:text-rose-400 hover:bg-slate-800" title="Excluir renda">
+                  <i class="fa-regular fa-trash-can text-sm"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      });
+
+      this.incomesListContainer.innerHTML = html;
+
+      this.incomesListContainer.querySelectorAll('[data-edit-income-id]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-edit-income-id');
+          this.openEditIncomeModal(id);
+        });
+      });
+
+      this.incomesListContainer.querySelectorAll('[data-delete-income-id]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-delete-income-id');
+          this.deleteIncome(id);
+        });
+      });
     },
 
-    getCurrentIncome() {
-      if (this.state.incomes && typeof this.state.incomes === 'object' && this.state.incomes[this.state.currentPeriod] !== undefined) {
-        return this.state.incomes[this.state.currentPeriod];
+    handleIncomeSubmit(e) {
+      e.preventDefault();
+      const editId = this.incomeEditId?.value || '';
+      const title = this.incomeTitleInput?.value.trim() || '';
+      const rawType = this.incomeTypeSelect?.value || 'Outros';
+      const type = INCOME_TYPE_META[rawType] ? rawType : 'Outros';
+      const amount = Utils.parseCurrency(this.incomeInput?.value);
+      const rawDate = this.incomeDateInput?.value.trim() || '';
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : null;
+
+      if (!title) {
+        Toast.show('Informe a descrição da fonte de renda.', 'warning');
+        return;
       }
-      return this.state.monthlyIncome || 0;
+      if (amount <= 0) {
+        Toast.show('O valor da renda deve ser maior que zero.', 'warning');
+        return;
+      }
+
+      if (!Array.isArray(this.state.incomeEntries)) {
+        this.state.incomeEntries = [];
+      }
+
+      let targetPeriod = this.state.currentPeriod;
+
+      if (editId) {
+        const idx = this.state.incomeEntries.findIndex(item => item.id === editId);
+        if (idx !== -1) {
+          const existing = this.state.incomeEntries[idx];
+          targetPeriod = date ? date.slice(0, 7) : (existing.period || this.state.currentPeriod);
+          this.state.incomeEntries[idx] = {
+            ...existing,
+            title,
+            type,
+            amount,
+            date,
+            period: targetPeriod,
+            updatedAt: new Date().toISOString()
+          };
+        }
+      } else {
+        targetPeriod = date ? date.slice(0, 7) : this.state.currentPeriod;
+        this.state.incomeEntries.push({
+          id: Utils.generateUUID(),
+          title,
+          type,
+          amount,
+          date,
+          period: targetPeriod,
+          createdAt: new Date().toISOString()
+        });
+      }
+
+      Storage.save(this.state);
+      this.resetIncomeForm();
+      this.render();
+      this.renderIncomeModal();
+
+      if (targetPeriod !== this.state.currentPeriod) {
+        Toast.show(`Renda "${title}" salva em ${Utils.formatPeriod(targetPeriod)}!`, 'success');
+      } else {
+        Toast.show(`Renda "${title}" ${editId ? 'atualizada' : 'adicionada'} com sucesso!`, 'success');
+      }
+    },
+
+    async deleteIncome(incomeId) {
+      const entry = (this.state.incomeEntries || []).find(item => item.id === incomeId);
+      if (!entry) return;
+
+      const confirmed = await ConfirmDialog.open({
+        title: 'Excluir Fonte de Renda',
+        message: `Deseja remover "${entry.title}" (${Utils.formatCurrency(entry.amount)})?`
+      });
+
+      if (!confirmed) return;
+
+      this.state.incomeEntries = this.state.incomeEntries.filter(item => item.id !== incomeId);
+      if (this.incomeEditId && this.incomeEditId.value === incomeId) {
+        this.resetIncomeForm();
+      }
+
+      Storage.save(this.state);
+      this.render();
+      this.renderIncomeModal();
+      Toast.show(`Renda "${entry.title}" excluída.`, 'info');
+    },
+
+    async replicateIncomesFromPreviousMonth() {
+      const currentPeriod = this.state.currentPeriod;
+      const prevPeriod = Utils.shiftPeriod(currentPeriod, -1);
+      const prevIncomes = this.getPeriodIncomes(prevPeriod);
+
+      if (prevIncomes.length === 0) {
+        Toast.show('Nenhuma renda encontrada no mês anterior.', 'warning');
+        return;
+      }
+
+      const confirmed = await ConfirmDialog.open({
+        title: 'Copiar Rendas do Mês Anterior',
+        message: `Deseja copiar ${prevIncomes.length} fonte(s) de renda de ${Utils.formatPeriod(prevPeriod)} para ${Utils.formatPeriod(currentPeriod)}?`
+      });
+
+      if (!confirmed) return;
+
+      const copied = prevIncomes.map(entry => ({
+        id: Utils.generateUUID(),
+        title: entry.title,
+        type: entry.type,
+        amount: entry.amount,
+        date: entry.date ? Utils.shiftDateToPeriod(entry.date, currentPeriod) : null,
+        period: currentPeriod,
+        createdAt: new Date().toISOString()
+      }));
+
+      if (!Array.isArray(this.state.incomeEntries)) {
+        this.state.incomeEntries = [];
+      }
+      this.state.incomeEntries.push(...copied);
+
+      Storage.save(this.state);
+      this.render();
+      this.renderIncomeModal();
+      Toast.show(`${copied.length} fonte(s) de renda copiada(s) para este mês!`, 'success');
     },
 
     handleBillSubmit(e) {
@@ -1147,6 +1638,53 @@
       this.render();
     },
 
+    buildInstallmentExpenses({ description, amount, amountType = 'total', count, startDateISO, category, method }) {
+      const safeCount = Math.max(1, parseInt(count, 10) || 1);
+      const baseAmount = Math.round((Number(amount) || 0) * 100) / 100;
+
+      let amountPerInstallment = baseAmount;
+      let diff = 0;
+
+      if (amountType === 'total') {
+        amountPerInstallment = Math.floor((baseAmount / safeCount) * 100) / 100;
+        diff = Math.round((baseAmount - (amountPerInstallment * safeCount)) * 100) / 100;
+      }
+
+      const groupId = Utils.generateUUID();
+      const [startYear, startMonth, startDay] = startDateISO.split('-').map(Number);
+      const installments = [];
+
+      for (let i = 0; i < safeCount; i++) {
+        const monthIndex = startMonth - 1 + i;
+        const targetYear = startYear + Math.floor(monthIndex / 12);
+        const targetMonth = (monthIndex % 12) + 1;
+        const daysInMonth = new Date(targetYear, targetMonth, 0).getDate();
+        const targetDay = Math.min(startDay, daysInMonth);
+        const targetDateISO = `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(targetDay).padStart(2, '0')}`;
+
+        const instAmount = (i === 0 && amountType === 'total')
+          ? Math.round((amountPerInstallment + diff) * 100) / 100
+          : amountPerInstallment;
+
+        installments.push({
+          id: Utils.generateUUID(),
+          description: safeCount > 1 ? `${description} (${i + 1}/${safeCount})` : description,
+          amount: instAmount,
+          date: targetDateISO,
+          category,
+          method,
+          ...(safeCount > 1 ? {
+            installmentGroupId: groupId,
+            installmentNumber: i + 1,
+            totalInstallments: safeCount
+          } : {}),
+          createdAt: new Date().toISOString()
+        });
+      }
+
+      return { installments, amountPerInstallment };
+    },
+
     handleExpenseSubmit(e) {
       e.preventDefault();
       const editId = this.expenseEditId.value;
@@ -1189,43 +1727,15 @@
         const count = parseInt(this.expenseInstallmentCount?.value || '2', 10);
         const installmentType = this.expenseForm.querySelector('input[name="installmentAmountType"]:checked')?.value || 'per_installment';
 
-        let amountPerInstallment = amount;
-        let diff = 0;
-
-        if (installmentType === 'total') {
-          amountPerInstallment = Math.floor((amount / count) * 100) / 100;
-          diff = Math.round((amount - (amountPerInstallment * count)) * 100) / 100;
-        }
-
-        const groupId = Utils.generateUUID();
-        const [startYear, startMonth, startDay] = date.split('-').map(Number);
-        const newInstallments = [];
-
-        for (let i = 0; i < count; i++) {
-          const monthIndex = startMonth - 1 + i;
-          const targetYear = startYear + Math.floor(monthIndex / 12);
-          const targetMonth = (monthIndex % 12) + 1;
-          const daysInMonth = new Date(targetYear, targetMonth, 0).getDate();
-          const targetDay = Math.min(startDay, daysInMonth);
-          const targetDateISO = `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(targetDay).padStart(2, '0')}`;
-
-          const instAmount = (i === 0 && installmentType === 'total')
-            ? Math.round((amountPerInstallment + diff) * 100) / 100
-            : amountPerInstallment;
-
-          newInstallments.push({
-            id: Utils.generateUUID(),
-            description: `${description} (${i + 1}/${count})`,
-            amount: instAmount,
-            date: targetDateISO,
-            category,
-            method,
-            installmentGroupId: groupId,
-            installmentNumber: i + 1,
-            totalInstallments: count,
-            createdAt: new Date().toISOString()
-          });
-        }
+        const { installments: newInstallments, amountPerInstallment } = this.buildInstallmentExpenses({
+          description,
+          amount,
+          amountType: installmentType,
+          count,
+          startDateISO: date,
+          category,
+          method
+        });
 
         this.state.expenses.unshift(...newInstallments);
         Toast.show(`Compra parcelada em ${count}x de ${Utils.formatCurrency(amountPerInstallment)} cadastrada!`, 'success');
@@ -1304,6 +1814,7 @@
     exportMonthlyCSV() {
       try {
         const period = this.state.currentPeriod;
+        const periodIncomes = this.getPeriodIncomes(period);
         const periodBills = this.state.bills.filter(b => b.dueDate.startsWith(period));
         const periodExpenses = this.state.expenses.filter(e => e.date.startsWith(period));
 
@@ -1326,6 +1837,20 @@
         csv += `Total Contas Fixas;${Utils.formatCurrency(billsTotal)}\r\n`;
         csv += `Total Gastos Diários;${Utils.formatCurrency(expensesTotal)}\r\n`;
         csv += `Saldo Líquido Restante;${Utils.formatCurrency(balance)}\r\n\r\n`;
+
+        // Tabela de Fontes de Renda
+        csv += 'FONTES DE RENDA DO MÊS\r\n';
+        csv += 'Descrição;Tipo;Data;Valor (R$)\r\n';
+        if (periodIncomes.length === 0) {
+          csv += 'Nenhuma renda registrada neste mês;;;\r\n';
+        } else {
+          periodIncomes.forEach(inc => {
+            const valor = (inc.amount || 0).toFixed(2).replace('.', ',');
+            const dateLabel = inc.date ? Utils.formatDate(inc.date) : 'Mês de referência';
+            csv += `"${inc.title.replace(/"/g, '""')}";"${inc.type}";"${dateLabel}";${valor}\r\n`;
+          });
+        }
+        csv += '\r\n';
 
         // Tabela de Contas Fixas
         csv += 'CONTAS DO MÊS (DESPESAS FIXAS)\r\n';
@@ -1416,15 +1941,19 @@
             return;
           }
 
+          const importedPeriod = (typeof parsed.currentPeriod === 'string' && /^\d{4}-\d{2}$/.test(parsed.currentPeriod))
+            ? parsed.currentPeriod
+            : Utils.getCurrentPeriodISO();
+
           this.state = {
-            version: parsed.version || 1,
-            monthlyIncome: typeof parsed.monthlyIncome === 'number' ? parsed.monthlyIncome : 0,
-            incomes: (parsed.incomes && typeof parsed.incomes === 'object') ? parsed.incomes : {},
-            currentPeriod: parsed.currentPeriod || Utils.getCurrentPeriodISO(),
+            version: 2,
+            currentPeriod: importedPeriod,
+            incomeEntries: Storage.normalizeIncomeEntries({ ...parsed, currentPeriod: importedPeriod }),
             budgets: (parsed.budgets && typeof parsed.budgets === 'object') ? parsed.budgets : {},
             alertSettings: Utils.normalizeAlertSettings(parsed.alertSettings),
             bills: Array.isArray(parsed.bills) ? parsed.bills : [],
-            expenses: Array.isArray(parsed.expenses) ? parsed.expenses : []
+            expenses: Array.isArray(parsed.expenses) ? parsed.expenses : [],
+            plans: Storage.normalizePlans(parsed.plans)
           };
 
           Storage.save(this.state);
@@ -1454,6 +1983,7 @@
       this.renderExpenses();
       this.renderChartsAndInsights();
       this.renderBudgets();
+      this.renderPlanning();
     },
 
     renderPeriod() {
@@ -1468,6 +1998,7 @@
     renderKPIs() {
       const period = this.state.currentPeriod;
 
+      const periodIncomes = this.getPeriodIncomes(period);
       const periodBills = this.state.bills.filter(b => b.dueDate.startsWith(period));
       const periodExpenses = this.state.expenses.filter(e => e.date.startsWith(period));
 
@@ -1482,6 +2013,15 @@
       // 1. Renda
       if (this.kpiIncome) {
         this.kpiIncome.textContent = Utils.formatCurrency(income);
+      }
+      if (this.kpiIncomeSubtitle) {
+        if (periodIncomes.length === 0) {
+          this.kpiIncomeSubtitle.textContent = 'Nenhuma renda cadastrada no mês';
+        } else if (periodIncomes.length === 1) {
+          this.kpiIncomeSubtitle.textContent = `1 fonte (${periodIncomes[0].type})`;
+        } else {
+          this.kpiIncomeSubtitle.textContent = `${periodIncomes.length} fontes de renda no mês`;
+        }
       }
 
       // 2. Contas Fixas
@@ -1768,7 +2308,1082 @@
     },
 
     // ========================================================================
-    // ALERTAS DE VENCIMENTO & INTEGRAÇÃO WHATSAPP
+    // PLANEJAMENTO E SIMULAÇÃO DE COMPRAS
+    // ========================================================================
+    getPlanStatusMeta(status) {
+      const STATUS_META = {
+        fits: {
+          label: 'Cabe no orçamento',
+          shortLabel: 'Cabe',
+          pillClass: 'status-pill-paid',
+          borderClass: 'border-emerald-500/30',
+          boxBgClass: 'bg-emerald-500/5',
+          textClass: 'text-emerald-300',
+          barColor: '#10b981',
+          icon: 'fa-circle-check'
+        },
+        tight: {
+          label: 'No limite / Atenção',
+          shortLabel: 'Apertado',
+          pillClass: 'status-pill-soon',
+          borderClass: 'border-amber-500/30',
+          boxBgClass: 'bg-amber-500/5',
+          textClass: 'text-amber-300',
+          barColor: '#f59e0b',
+          icon: 'fa-triangle-exclamation'
+        },
+        over: {
+          label: 'Extrapolaria o orçamento',
+          shortLabel: 'Extrapolaria',
+          pillClass: 'status-pill-overdue',
+          borderClass: 'border-rose-500/30',
+          boxBgClass: 'bg-rose-500/5',
+          textClass: 'text-rose-300',
+          barColor: '#f43f5e',
+          icon: 'fa-circle-xmark'
+        },
+        completed: {
+          label: 'Efetivado',
+          shortLabel: 'Efetivado',
+          pillClass: 'status-pill-paid',
+          borderClass: 'border-slate-700/60',
+          boxBgClass: 'bg-slate-900/40',
+          textClass: 'text-emerald-400',
+          barColor: '#10b981',
+          icon: 'fa-check-double'
+        }
+      };
+      return STATUS_META[status] || STATUS_META.tight;
+    },
+
+    formatCompactPeriod(periodStr) {
+      if (!periodStr) return '';
+      const [yearStr, monthStr] = periodStr.split('-');
+      const monthsShort = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+      const monthIdx = parseInt(monthStr, 10) - 1;
+      const monthName = monthsShort[monthIdx] || monthStr;
+      return `${monthName}/${yearStr.slice(-2)}`;
+    },
+
+    getMonthBaseline(period) {
+      const basePeriod = this.state.currentPeriod;
+      const isFuture = period !== basePeriod;
+
+      const periodIncomes = this.getPeriodIncomes(period);
+      const usesRecurringIncome = isFuture && periodIncomes.length === 0;
+      const income = usesRecurringIncome
+        ? this.getCurrentIncome(basePeriod)
+        : periodIncomes.reduce((sum, entry) => sum + (entry.amount || 0), 0);
+
+      const periodBillsList = this.state.bills.filter(b => (b.dueDate || '').startsWith(period));
+      const usesRecurringBills = isFuture && periodBillsList.length === 0;
+      const refBillsList = usesRecurringBills
+        ? this.state.bills.filter(b => (b.dueDate || '').startsWith(basePeriod))
+        : periodBillsList;
+      const bills = refBillsList.reduce((sum, b) => sum + (b.amount || 0), 0);
+
+      const expenses = this.state.expenses
+        .filter(e => (e.date || '').startsWith(period))
+        .reduce((sum, e) => sum + (e.amount || 0), 0);
+
+      const totalCommitted = Math.round((bills + expenses) * 100) / 100;
+      const balanceBefore = Math.round((income - totalCommitted) * 100) / 100;
+
+      return {
+        period,
+        income: Math.round(income * 100) / 100,
+        bills: Math.round(bills * 100) / 100,
+        expenses: Math.round(expenses * 100) / 100,
+        totalCommitted,
+        balanceBefore,
+        usesRecurringBase: isFuture && (usesRecurringIncome || usesRecurringBills)
+      };
+    },
+
+    getPlanCategoryUsage(category, period) {
+      const budgetLimit = Number((this.state.budgets || {})[category]) || 0;
+      const currentSpent = [
+        ...this.state.expenses.filter(e => (e.date || '').startsWith(period) && (e.category || 'Outros') === category),
+        ...this.state.bills.filter(b => (b.dueDate || '').startsWith(period) && (b.category || 'Outros') === category)
+      ].reduce((sum, item) => sum + (item.amount || 0), 0);
+
+      return {
+        budgetLimit,
+        currentSpent: Math.round(currentSpent * 100) / 100
+      };
+    },
+
+    computeInstallmentBreakdown(total, count) {
+      const safeCount = Math.max(1, parseInt(count, 10) || 1);
+      const safeTotal = Math.max(0, Math.round((Number(total) || 0) * 100) / 100);
+      const baseAmount = Math.floor((safeTotal / safeCount) * 100) / 100;
+      const diff = Math.round((safeTotal - (baseAmount * safeCount)) * 100) / 100;
+      const firstAmount = Math.round((baseAmount + diff) * 100) / 100;
+      return { safeCount, baseAmount, firstAmount };
+    },
+
+    evaluateInstallmentPlan(plan, metrics) {
+      const { startPeriod, currentBase, targetAmount, remainingAmount, progressPercent } = metrics;
+      const installments = Math.max(1, Math.min(36, parseInt(plan.installments, 10) || 1));
+      const { budgetLimit, currentSpent } = this.getPlanCategoryUsage(plan.category, startPeriod);
+
+      if (targetAmount > 0 && remainingAmount === 0) {
+        const currentMonth = { ...currentBase, impact: 0, balanceAfter: currentBase.balanceBefore };
+        return {
+          mode: 'installment',
+          status: 'fits',
+          statusMeta: this.getPlanStatusMeta('fits'),
+          targetAmount,
+          savedAmount: metrics.savedAmount,
+          remainingAmount: 0,
+          progressPercent: 100,
+          installments,
+          monthlyImpact: 0,
+          firstInstallmentImpact: 0,
+          incomeSharePercent: 0,
+          monthsNeeded: 0,
+          targetCompletionPeriod: startPeriod,
+          currentMonth,
+          worstMonth: currentMonth,
+          deficitMonths: [],
+          timeline: [currentMonth],
+          usesRecurringHorizon: false,
+          categoryBudget: budgetLimit,
+          categorySpentCurrent: currentSpent,
+          categoryExceedsBudget: false,
+          categoryOverflowAmount: 0,
+          recommendation: 'Você já possui 100% do valor separado! Pode efetivar a compra sem comprometer seu orçamento mensal.'
+        };
+      }
+
+      const { baseAmount, firstAmount } = this.computeInstallmentBreakdown(remainingAmount, installments);
+      const timeline = [];
+      for (let i = 0; i < installments; i++) {
+        const period = Utils.shiftPeriod(startPeriod, i);
+        const base = this.getMonthBaseline(period);
+        const impact = i === 0 ? firstAmount : baseAmount;
+        const balanceAfter = Math.round((base.balanceBefore - impact) * 100) / 100;
+        timeline.push({ ...base, impact, balanceAfter });
+      }
+
+      const currentMonth = timeline[0];
+      const worstMonth = timeline.reduce((worst, m) => (m.balanceAfter < worst.balanceAfter ? m : worst), timeline[0]);
+      const deficitMonths = timeline.filter(m => m.balanceAfter < 0);
+      const monthlyImpact = installments === 1 ? firstAmount : baseAmount;
+      const incomeSharePercent = currentBase.income > 0
+        ? Math.round((monthlyImpact / currentBase.income) * 100)
+        : (monthlyImpact > 0 ? 100 : 0);
+
+      const projectedCategoryTotal = Math.round((currentSpent + firstAmount) * 100) / 100;
+      const categoryExceedsBudget = budgetLimit > 0 && projectedCategoryTotal > budgetLimit;
+      const categoryOverflowAmount = categoryExceedsBudget
+        ? Math.round((projectedCategoryTotal - budgetLimit) * 100) / 100
+        : 0;
+
+      let status = 'fits';
+      if (currentBase.income <= 0 || deficitMonths.length > 0) {
+        status = 'over';
+      } else if (worstMonth.balanceAfter < (currentBase.income * 0.1) || incomeSharePercent > 25 || categoryExceedsBudget) {
+        status = 'tight';
+      }
+
+      let recommendation = '';
+      if (status === 'over') {
+        const altOptions = [2, 3, 4, 5, 6, 8, 10, 12, 15, 18, 24, 36].filter(n => n > installments);
+        let foundAlt = null;
+
+        for (const k of altOptions) {
+          const { baseAmount: altBase, firstAmount: altFirst } = this.computeInstallmentBreakdown(remainingAmount, k);
+          let allNonNegative = true;
+          for (let j = 0; j < k; j++) {
+            const p = Utils.shiftPeriod(startPeriod, j);
+            const b = this.getMonthBaseline(p);
+            const imp = j === 0 ? altFirst : altBase;
+            if ((b.balanceBefore - imp) < 0) {
+              allNonNegative = false;
+              break;
+            }
+          }
+          if (allNonNegative && currentBase.income > 0) {
+            foundAlt = { count: k, perMonth: altBase };
+            break;
+          }
+        }
+
+        if (foundAlt) {
+          recommendation = `Em ${installments}x, o orçamento fecha negativo em ${Utils.formatPeriod(worstMonth.period)}. Parcelando em ${foundAlt.count}x (${Utils.formatCurrency(foundAlt.perMonth)}/mês), todos os meses permanecem no azul.`;
+        } else if (currentBase.balanceBefore > 0) {
+          const halfSlack = Math.max(1, Math.round((currentBase.balanceBefore * 0.5) * 100) / 100);
+          const saveMonths = Math.ceil(remainingAmount / halfSlack);
+          recommendation = `Mesmo aumentando o parcelamento, ${Utils.formatPeriod(worstMonth.period)} ficaria negativo. Alternativa: no modo "Juntar por mês", guardando ${Utils.formatCurrency(halfSlack)}/mês (50% da folga atual), você junta em ${saveMonths} ${saveMonths === 1 ? 'mês' : 'meses'}.`;
+        } else {
+          recommendation = 'Seu orçamento atual já fecha sem folga antes dessa compra. Reduza gastos ou reforce a renda antes de assumir novas parcelas.';
+        }
+      } else if (status === 'tight') {
+        if (categoryExceedsBudget) {
+          recommendation = `As parcelas cabem no saldo geral, mas a primeira parcela ultrapassa em ${Utils.formatCurrency(categoryOverflowAmount)} o teto mensal da categoria ${plan.category}.`;
+        } else {
+          recommendation = `Cabe no orçamento, mas a sobra em ${Utils.formatPeriod(worstMonth.period)} ficará apertada (${Utils.formatCurrency(worstMonth.balanceAfter)}). Considere aumentar a entrada ou parcelar em mais vezes.`;
+        }
+      } else {
+        recommendation = `Compra saudável! Mesmo no mês de maior comprometimento (${Utils.formatPeriod(worstMonth.period)}), restará ${Utils.formatCurrency(worstMonth.balanceAfter)} livre.`;
+      }
+
+      return {
+        mode: 'installment',
+        status,
+        statusMeta: this.getPlanStatusMeta(status),
+        targetAmount,
+        savedAmount: metrics.savedAmount,
+        remainingAmount,
+        progressPercent,
+        installments,
+        monthlyImpact,
+        firstInstallmentImpact: firstAmount,
+        incomeSharePercent,
+        monthsNeeded: installments,
+        targetCompletionPeriod: Utils.shiftPeriod(startPeriod, installments - 1),
+        currentMonth,
+        worstMonth,
+        deficitMonths,
+        timeline,
+        usesRecurringHorizon: timeline.some(m => m.usesRecurringBase),
+        categoryBudget: budgetLimit,
+        categorySpentCurrent: currentSpent,
+        categoryExceedsBudget,
+        categoryOverflowAmount,
+        recommendation
+      };
+    },
+
+    evaluateSavePlan(plan, metrics) {
+      const { startPeriod, currentBase, targetAmount, savedAmount, remainingAmount, progressPercent } = metrics;
+      const monthlyContribution = Math.max(0, Math.round((Number(plan.monthlyContribution) || 0) * 100) / 100);
+      const { budgetLimit, currentSpent } = this.getPlanCategoryUsage(plan.category, startPeriod);
+
+      if (targetAmount > 0 && remainingAmount === 0) {
+        const currentMonth = { ...currentBase, impact: 0, balanceAfter: currentBase.balanceBefore };
+        return {
+          mode: 'save',
+          status: 'fits',
+          statusMeta: this.getPlanStatusMeta('fits'),
+          targetAmount,
+          savedAmount,
+          remainingAmount: 0,
+          progressPercent: 100,
+          installments: 1,
+          monthlyImpact: 0,
+          firstInstallmentImpact: 0,
+          incomeSharePercent: 0,
+          monthsNeeded: 0,
+          targetCompletionPeriod: startPeriod,
+          currentMonth,
+          worstMonth: currentMonth,
+          deficitMonths: [],
+          timeline: [currentMonth],
+          usesRecurringHorizon: false,
+          categoryBudget: budgetLimit,
+          categorySpentCurrent: currentSpent,
+          categoryExceedsBudget: false,
+          categoryOverflowAmount: 0,
+          recommendation: 'Você já guardou todo o valor necessário para realizar esta compra à vista!'
+        };
+      }
+
+      if (monthlyContribution <= 0) {
+        const status = currentBase.balanceBefore > 0 ? 'tight' : 'over';
+        const currentMonth = { ...currentBase, impact: 0, balanceAfter: currentBase.balanceBefore };
+        return {
+          mode: 'save',
+          status,
+          statusMeta: this.getPlanStatusMeta(status),
+          targetAmount,
+          savedAmount,
+          remainingAmount,
+          progressPercent,
+          installments: 1,
+          monthlyImpact: 0,
+          firstInstallmentImpact: 0,
+          incomeSharePercent: 0,
+          monthsNeeded: null,
+          targetCompletionPeriod: null,
+          currentMonth,
+          worstMonth: currentMonth,
+          deficitMonths: [],
+          timeline: [currentMonth],
+          usesRecurringHorizon: false,
+          categoryBudget: budgetLimit,
+          categorySpentCurrent: currentSpent,
+          categoryExceedsBudget: false,
+          categoryOverflowAmount: 0,
+          recommendation: 'Defina quanto pretende guardar por mês (ou clique em um dos atalhos acima) para calcular o prazo.'
+        };
+      }
+
+      const monthsNeeded = Math.ceil(remainingAmount / monthlyContribution);
+      const targetCompletionPeriod = Utils.shiftPeriod(startPeriod, Math.max(0, monthsNeeded - 1));
+      const horizon = Math.min(monthsNeeded, 12);
+      const timeline = [];
+
+      for (let i = 0; i < horizon; i++) {
+        const period = Utils.shiftPeriod(startPeriod, i);
+        const base = this.getMonthBaseline(period);
+        const alreadySavedInPlan = monthlyContribution * i;
+        const impact = (i === monthsNeeded - 1)
+          ? Math.max(0, Math.round((remainingAmount - alreadySavedInPlan) * 100) / 100)
+          : monthlyContribution;
+        const balanceAfter = Math.round((base.balanceBefore - impact) * 100) / 100;
+        timeline.push({ ...base, impact, balanceAfter });
+      }
+
+      const currentMonth = timeline[0];
+      const worstMonth = timeline.reduce((worst, m) => (m.balanceAfter < worst.balanceAfter ? m : worst), timeline[0]);
+      const deficitMonths = timeline.filter(m => m.balanceAfter < 0);
+      const incomeSharePercent = currentBase.income > 0
+        ? Math.round((monthlyContribution / currentBase.income) * 100)
+        : 100;
+
+      let status = 'fits';
+      if (currentBase.income <= 0 || deficitMonths.length > 0) {
+        status = 'over';
+      } else if (worstMonth.balanceAfter < (currentBase.income * 0.1) || incomeSharePercent > 30) {
+        status = 'tight';
+      }
+
+      let recommendation = '';
+      if (status === 'over') {
+        if (currentBase.balanceBefore > 0) {
+          const safePace = Math.max(1, Math.round((currentBase.balanceBefore * 0.6) * 100) / 100);
+          const safeMonths = Math.ceil(remainingAmount / safePace);
+          recommendation = `Guardar ${Utils.formatCurrency(monthlyContribution)}/mês deixaria ${Utils.formatPeriod(worstMonth.period)} no vermelho. Ajustando para ${Utils.formatCurrency(safePace)}/mês, você mantém folga e conclui em ${safeMonths} ${safeMonths === 1 ? 'mês' : 'meses'}.`;
+        } else {
+          recommendation = 'Sua folga no período já está comprometida. Ajuste seus gastos ou fontes de renda antes de definir aportes mensais.';
+        }
+      } else if (status === 'tight') {
+        recommendation = `Meta viável em ${monthsNeeded} ${monthsNeeded === 1 ? 'mês' : 'meses'} (previsão: ${Utils.formatPeriod(targetCompletionPeriod)}), mas compromete boa parte da folga mensal (menor saldo previsto: ${Utils.formatCurrency(worstMonth.balanceAfter)}).`;
+      } else {
+        recommendation = `Ritmo excelente! Guardando ${Utils.formatCurrency(monthlyContribution)}/mês, você atinge ${Utils.formatCurrency(targetAmount)} em ${monthsNeeded} ${monthsNeeded === 1 ? 'mês' : 'meses'} (${Utils.formatPeriod(targetCompletionPeriod)}) sem apertar o mês.`;
+      }
+
+      return {
+        mode: 'save',
+        status,
+        statusMeta: this.getPlanStatusMeta(status),
+        targetAmount,
+        savedAmount,
+        remainingAmount,
+        progressPercent,
+        installments: monthsNeeded,
+        monthlyImpact: monthlyContribution,
+        firstInstallmentImpact: currentMonth.impact,
+        incomeSharePercent,
+        monthsNeeded,
+        targetCompletionPeriod,
+        currentMonth,
+        worstMonth,
+        deficitMonths,
+        timeline,
+        usesRecurringHorizon: timeline.some(m => m.usesRecurringBase),
+        categoryBudget: budgetLimit,
+        categorySpentCurrent: currentSpent,
+        categoryExceedsBudget: false,
+        categoryOverflowAmount: 0,
+        recommendation
+      };
+    },
+
+    evaluatePlan(plan) {
+      const startPeriod = this.state.currentPeriod;
+      const currentBase = this.getMonthBaseline(startPeriod);
+      const targetAmount = Math.max(0, Math.round((Number(plan.targetAmount) || 0) * 100) / 100);
+      const savedAmount = Math.max(0, Math.round((Number(plan.savedAmount) || 0) * 100) / 100);
+      const remainingAmount = Math.max(0, Math.round((targetAmount - savedAmount) * 100) / 100);
+      const progressPercent = targetAmount > 0
+        ? Math.min(100, Math.round((savedAmount / targetAmount) * 100))
+        : 0;
+
+      const metrics = {
+        startPeriod,
+        currentBase,
+        targetAmount,
+        savedAmount,
+        remainingAmount,
+        progressPercent
+      };
+
+      return plan.mode === 'save'
+        ? this.evaluateSavePlan(plan, metrics)
+        : this.evaluateInstallmentPlan(plan, metrics);
+    },
+
+    renderPlanning() {
+      if (!this.planningBreakdownList) return;
+
+      const plans = [...(this.state.plans || [])].sort((a, b) => {
+        if (a.status !== b.status) return a.status === 'active' ? -1 : 1;
+        return 0;
+      });
+
+      if (plans.length === 0) {
+        this.planningBreakdownList.innerHTML = `
+          <div class="text-center py-4 text-slate-500 text-xs">
+            <i class="fa-solid fa-compass text-2xl mb-1.5 opacity-40"></i>
+            <p>Nenhuma compra planejada ainda.</p>
+            <button id="quickOpenPlanningBtn" class="mt-2.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-400 border border-indigo-400/30 rounded-lg text-xs font-semibold transition-colors">
+              Simular Primeira Compra
+            </button>
+          </div>
+        `;
+        document.getElementById('quickOpenPlanningBtn')?.addEventListener('click', () => this.openPlanningModal());
+      } else {
+        const visiblePlans = plans.slice(0, 3);
+        let html = '';
+
+        visiblePlans.forEach(plan => {
+          const catColor = CATEGORY_COLORS[plan.category] || '#6366f1';
+          const catIcon = CATEGORY_ICONS[plan.category] || 'fa-tags';
+          const isCompleted = plan.status === 'completed';
+          const evaluation = isCompleted ? null : this.evaluatePlan(plan);
+          const statusMeta = isCompleted ? this.getPlanStatusMeta('completed') : evaluation.statusMeta;
+
+          let subline = '';
+          let progressHtml = '';
+
+          if (isCompleted) {
+            subline = `Valor planejado: <strong class="text-slate-200">${Utils.formatCurrency(plan.targetAmount)}</strong>`;
+          } else if (plan.mode === 'save') {
+            const monthsLabel = evaluation.monthsNeeded === null
+              ? 'Defina aporte'
+              : (evaluation.monthsNeeded === 0 ? 'Meta atingida' : `${evaluation.monthsNeeded} ${evaluation.monthsNeeded === 1 ? 'mês' : 'meses'}`);
+            subline = `<span>Aporte: <strong class="text-slate-200">${Utils.formatCurrency(plan.monthlyContribution)}/mês</strong></span><span>${monthsLabel}</span>`;
+            progressHtml = `
+              <div class="space-y-1">
+                <div class="flex items-center justify-between text-[10px] text-slate-400">
+                  <span>Guardado: ${Utils.formatCurrency(plan.savedAmount)}</span>
+                  <span>${evaluation.progressPercent}%</span>
+                </div>
+                <div class="w-full h-1.5 bg-slate-700/60 rounded-full overflow-hidden">
+                  <div class="h-full rounded-full transition-all duration-500" style="width: ${evaluation.progressPercent}%; background-color: ${statusMeta.barColor};"></div>
+                </div>
+              </div>
+            `;
+          } else {
+            const condLabel = evaluation.remainingAmount === 0
+              ? 'Coberto pela reserva'
+              : (plan.installments > 1 ? `${plan.installments}x de ${Utils.formatCurrency(evaluation.monthlyImpact)}` : `À vista: ${Utils.formatCurrency(evaluation.monthlyImpact)}`);
+            subline = `<span>Alvo: <strong class="text-slate-200">${Utils.formatCurrency(plan.targetAmount)}</strong></span><span class="font-medium text-slate-300">${condLabel}</span>`;
+          }
+
+          html += `
+            <div data-plan-open-id="${plan.id}" class="p-3 bg-slate-900/60 hover:bg-slate-900/90 rounded-xl border border-slate-700/50 hover:border-indigo-500/40 space-y-2 cursor-pointer transition-colors">
+              <div class="flex items-center justify-between gap-2 text-xs">
+                <div class="flex items-center gap-2 min-w-0">
+                  <div class="w-6 h-6 rounded-lg flex-shrink-0 flex items-center justify-center text-[10px]" style="background-color: ${catColor}20; color: ${catColor};">
+                    <i class="fa-solid ${catIcon}"></i>
+                  </div>
+                  <span class="font-semibold text-slate-200 truncate">${Utils.escapeHTML(plan.title)}</span>
+                </div>
+                <span class="status-pill ${statusMeta.pillClass} text-[10px] flex-shrink-0">${statusMeta.shortLabel}</span>
+              </div>
+              <div class="flex items-center justify-between text-[11px] text-slate-400">
+                ${subline}
+              </div>
+              ${progressHtml}
+            </div>
+          `;
+        });
+
+        if (plans.length > 3) {
+          html += `
+            <button type="button" id="viewAllPlansBtn" class="w-full py-1.5 text-[11px] font-medium text-indigo-300 hover:text-indigo-200 bg-indigo-500/10 hover:bg-indigo-500/15 border border-indigo-500/20 rounded-lg transition-colors">
+              Ver todos os ${plans.length} planejamentos
+            </button>
+          `;
+        }
+
+        this.planningBreakdownList.innerHTML = html;
+
+        this.planningBreakdownList.querySelectorAll('[data-plan-open-id]').forEach(card => {
+          card.addEventListener('click', () => {
+            this.openPlanningModal(card.getAttribute('data-plan-open-id'));
+          });
+        });
+
+        document.getElementById('viewAllPlansBtn')?.addEventListener('click', () => this.openPlanningModal());
+      }
+
+      if (this.planningModal && !this.planningModal.classList.contains('hidden')) {
+        this.renderPlanningModalList();
+        this.updatePlanSimulationPreview();
+      }
+    },
+
+    openPlanningModal(editPlanId = null) {
+      if (editPlanId) {
+        this.openEditPlan(editPlanId);
+      } else {
+        this.resetPlanningForm();
+      }
+      this.renderPlanningModalList();
+      this.updatePlanSimulationPreview();
+      this.openModal(this.planningModal);
+      this.planTitleInput?.focus();
+    },
+
+    resetPlanningForm() {
+      this.planningForm?.reset();
+      if (this.planEditId) this.planEditId.value = '';
+      if (this.planningFormTitle) this.planningFormTitle.textContent = 'Simular Nova Compra';
+      this.cancelPlanningEditBtn?.classList.add('hidden');
+      if (this.planningSubmitBtn) {
+        this.planningSubmitBtn.innerHTML = '<i class="fa-solid fa-bookmark"></i><span>Salvar Planejamento</span>';
+      }
+      if (this.planCategorySelect) this.planCategorySelect.value = 'Compras';
+      if (this.planTargetAmountInput) this.planTargetAmountInput.value = '0,00';
+      if (this.planSavedAmountInput) this.planSavedAmountInput.value = '0,00';
+      if (this.planInstallmentsSelect) this.planInstallmentsSelect.value = '10';
+      if (this.planPaymentMethodSelect) this.planPaymentMethodSelect.value = 'Cartão de Crédito';
+      if (this.planMonthlyContributionInput) this.planMonthlyContributionInput.value = '0,00';
+      this.setPlanMode('installment', false);
+    },
+
+    openEditPlan(planId) {
+      const plan = (this.state.plans || []).find(p => p.id === planId);
+      if (!plan) return;
+
+      if (this.planEditId) this.planEditId.value = plan.id;
+      if (this.planningFormTitle) this.planningFormTitle.textContent = 'Editar Planejamento';
+      this.cancelPlanningEditBtn?.classList.remove('hidden');
+      if (this.planningSubmitBtn) {
+        this.planningSubmitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i><span>Salvar Alterações</span>';
+      }
+
+      if (this.planTitleInput) this.planTitleInput.value = plan.title;
+      if (this.planCategorySelect) this.planCategorySelect.value = CATEGORY_COLORS[plan.category] ? plan.category : 'Compras';
+      if (this.planTargetAmountInput) this.planTargetAmountInput.value = Utils.formatNumberToInput(plan.targetAmount);
+      if (this.planSavedAmountInput) this.planSavedAmountInput.value = Utils.formatNumberToInput(plan.savedAmount);
+
+      if (this.planInstallmentsSelect) {
+        const instStr = String(plan.installments || 10);
+        const hasOption = Array.from(this.planInstallmentsSelect.options).some(opt => opt.value === instStr);
+        if (!hasOption) {
+          const opt = document.createElement('option');
+          opt.value = instStr;
+          opt.textContent = instStr === '1' ? '1x (À vista)' : `${instStr}x sem juros`;
+          this.planInstallmentsSelect.appendChild(opt);
+        }
+        this.planInstallmentsSelect.value = instStr;
+      }
+
+      if (this.planPaymentMethodSelect) {
+        this.planPaymentMethodSelect.value = METHOD_ICONS[plan.paymentMethod] ? plan.paymentMethod : 'Cartão de Crédito';
+      }
+      if (this.planMonthlyContributionInput) {
+        this.planMonthlyContributionInput.value = Utils.formatNumberToInput(plan.monthlyContribution || 0);
+      }
+
+      this.setPlanMode(plan.mode, false);
+      this.updatePlanSimulationPreview();
+      if (this.planningModalBody) this.planningModalBody.scrollTop = 0;
+    },
+
+    setPlanMode(mode, updatePreview = true) {
+      const normalizedMode = mode === 'save' ? 'save' : 'installment';
+      if (this.planModeInput) this.planModeInput.value = normalizedMode;
+
+      this.planModeBtns.forEach(btn => {
+        const isActive = btn.getAttribute('data-plan-mode') === normalizedMode;
+        if (isActive) {
+          btn.classList.add('bg-indigo-600', 'text-white', 'shadow-sm');
+          btn.classList.remove('text-slate-400', 'hover:text-white');
+        } else {
+          btn.classList.remove('bg-indigo-600', 'text-white', 'shadow-sm');
+          btn.classList.add('text-slate-400', 'hover:text-white');
+        }
+      });
+
+      if (normalizedMode === 'save') {
+        this.planInstallmentFields?.classList.add('hidden');
+        this.planSaveFields?.classList.remove('hidden');
+      } else {
+        this.planInstallmentFields?.classList.remove('hidden');
+        this.planSaveFields?.classList.add('hidden');
+      }
+
+      if (updatePreview) {
+        this.updatePlanSimulationPreview();
+      }
+    },
+
+    getPlanFormDraft() {
+      return {
+        id: this.planEditId?.value || '',
+        title: (this.planTitleInput?.value || '').trim(),
+        category: this.planCategorySelect?.value || 'Compras',
+        mode: (this.planModeInput?.value === 'save') ? 'save' : 'installment',
+        targetAmount: Utils.parseCurrency(this.planTargetAmountInput?.value || '0'),
+        savedAmount: Utils.parseCurrency(this.planSavedAmountInput?.value || '0'),
+        installments: parseInt(this.planInstallmentsSelect?.value || '10', 10) || 10,
+        paymentMethod: this.planPaymentMethodSelect?.value || 'Cartão de Crédito',
+        monthlyContribution: Utils.parseCurrency(this.planMonthlyContributionInput?.value || '0')
+      };
+    },
+
+    applyPlanMonthsPreset(months) {
+      const safeMonths = Math.max(1, parseInt(months, 10) || 6);
+      const targetAmount = Utils.parseCurrency(this.planTargetAmountInput?.value || '0');
+      const savedAmount = Utils.parseCurrency(this.planSavedAmountInput?.value || '0');
+
+      if (targetAmount <= 0) {
+        Toast.show('Informe o valor total estimado primeiro para calcular o aporte.', 'warning');
+        this.planTargetAmountInput?.focus();
+        return;
+      }
+
+      const remaining = Math.max(0, Math.round((targetAmount - savedAmount) * 100) / 100);
+      const perMonth = remaining > 0 ? Math.ceil((remaining / safeMonths) * 100) / 100 : 0;
+
+      if (this.planMonthlyContributionInput) {
+        this.planMonthlyContributionInput.value = Utils.formatNumberToInput(perMonth);
+      }
+      this.updatePlanSimulationPreview();
+    },
+
+    applyFreeBalanceToPlan() {
+      const base = this.getMonthBaseline(this.state.currentPeriod);
+      if (base.balanceBefore <= 0) {
+        Toast.show('O mês atual não possui folga positiva para sugerir aporte.', 'warning');
+        return;
+      }
+      const suggested = Math.round((base.balanceBefore * 0.5) * 100) / 100;
+      if (this.planMonthlyContributionInput) {
+        this.planMonthlyContributionInput.value = Utils.formatNumberToInput(suggested);
+      }
+      this.updatePlanSimulationPreview();
+    },
+
+    updatePlanSimulationPreview() {
+      if (!this.planSimulationPreview) return;
+
+      const draft = this.getPlanFormDraft();
+      const currentBase = this.getMonthBaseline(this.state.currentPeriod);
+      const currentBalanceClass = currentBase.balanceBefore >= 0 ? 'text-emerald-300' : 'text-rose-300';
+
+      if (draft.targetAmount <= 0) {
+        this.planSimulationPreview.innerHTML = `
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-slate-400">
+            <div class="flex items-center gap-2">
+              <i class="fa-solid fa-calculator text-indigo-400"></i>
+              <span>Informe o valor total estimado acima para simular o impacto no orçamento.</span>
+            </div>
+            <div class="text-[11px] flex-shrink-0">
+              Folga atual: <strong class="${currentBalanceClass}">${Utils.formatCurrency(currentBase.balanceBefore)}</strong>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      const ev = this.evaluatePlan(draft);
+      const meta = ev.statusMeta;
+      const balanceAfterCurrent = ev.currentMonth.balanceAfter;
+      const afterClass = balanceAfterCurrent >= 0 ? 'text-emerald-300' : 'text-rose-300';
+      const worstClass = ev.worstMonth.balanceAfter >= 0 ? 'text-slate-100' : 'text-rose-300';
+
+      const headlineValue = ev.mode === 'save'
+        ? (ev.remainingAmount === 0
+          ? 'Valor já acumulado!'
+          : (ev.monthsNeeded ? `${ev.monthsNeeded} ${ev.monthsNeeded === 1 ? 'mês' : 'meses'} guardando ${Utils.formatCurrency(ev.monthlyImpact)}/mês` : 'Aporte mensal não definido'))
+        : (ev.remainingAmount === 0
+          ? '100% coberto pela entrada'
+          : (ev.installments > 1 ? `${ev.installments}x de ${Utils.formatCurrency(ev.monthlyImpact)}` : `À vista: ${Utils.formatCurrency(ev.monthlyImpact)}`));
+
+      const thirdMetricLabel = ev.mode === 'save'
+        ? 'Previsão de compra'
+        : `Pior mês (${this.formatCompactPeriod(ev.worstMonth.period)})`;
+      const thirdMetricValue = ev.mode === 'save'
+        ? (ev.targetCompletionPeriod ? `${this.formatCompactPeriod(ev.targetCompletionPeriod)}` : '—')
+        : Utils.formatCurrency(ev.worstMonth.balanceAfter);
+      const thirdMetricClass = ev.mode === 'save' ? 'text-indigo-300' : worstClass;
+
+      const progressBarHtml = (ev.mode === 'save' || ev.savedAmount > 0) ? `
+        <div class="space-y-1 pt-0.5">
+          <div class="flex items-center justify-between text-[11px] text-slate-400">
+            <span>Reserva: <strong class="text-slate-200">${Utils.formatCurrency(ev.savedAmount)}</strong> de ${Utils.formatCurrency(ev.targetAmount)}</span>
+            <span>Falta: <strong class="text-slate-200">${Utils.formatCurrency(ev.remainingAmount)}</strong> (${ev.progressPercent}%)</span>
+          </div>
+          <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+            <div class="h-full rounded-full transition-all duration-300" style="width: ${ev.progressPercent}%; background-color: ${meta.barColor};"></div>
+          </div>
+        </div>
+      ` : '';
+
+      const categoryWarningHtml = ev.categoryExceedsBudget ? `
+        <div class="p-2 rounded-lg bg-amber-500/10 border border-amber-500/25 text-amber-200 text-[11px] flex items-start gap-2">
+          <i class="fa-solid fa-bullseye mt-0.5 flex-shrink-0 text-amber-400"></i>
+          <span>Teto da categoria <strong>${Utils.escapeHTML(draft.category)}</strong> (${Utils.formatCurrency(ev.categoryBudget)}): seria ultrapassado em <strong>${Utils.formatCurrency(ev.categoryOverflowAmount)}</strong> neste mês.</span>
+        </div>
+      ` : '';
+
+      const timelineSlice = ev.timeline.slice(0, 6);
+      const timelineChipsHtml = timelineSlice.length > 1 ? `
+        <div class="pt-1 space-y-1">
+          <div class="flex items-center justify-between text-[10px] text-slate-400 uppercase tracking-wider font-semibold">
+            <span>Projeção de saldo pós-compromisso${ev.timeline.length > 6 ? ` (primeiros 6 de ${ev.timeline.length} meses)` : ''}</span>
+          </div>
+          <div class="flex flex-wrap gap-1.5">
+            ${timelineSlice.map(m => {
+              const chipColor = m.balanceAfter >= 0
+                ? 'bg-slate-900/90 border-slate-700 text-slate-200'
+                : 'bg-rose-500/15 border-rose-500/40 text-rose-200';
+              return `<span class="px-2 py-0.5 rounded-md border text-[10px] font-medium ${chipColor}">${this.formatCompactPeriod(m.period)}: <strong>${Utils.formatCurrency(m.balanceAfter)}</strong></span>`;
+            }).join('')}
+          </div>
+        </div>
+      ` : '';
+
+      const baselineFootnoteHtml = ev.usesRecurringHorizon ? `
+        <p class="text-[10px] text-slate-500">
+          <i class="fa-solid fa-circle-info mr-1"></i>Meses futuros sem lançamentos próprios usam a renda e contas fixas atuais como base + parcelas já cadastradas.
+        </p>
+      ` : '';
+
+      this.planSimulationPreview.innerHTML = `
+        <div class="space-y-2.5">
+          <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-800">
+            <div class="flex items-center gap-2">
+              <i class="fa-solid ${meta.icon} ${meta.textClass}"></i>
+              <span class="font-bold text-slate-100">${headlineValue}</span>
+            </div>
+            <span class="status-pill ${meta.pillClass} text-[10px]">${meta.label}</span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <div class="p-2 rounded-lg bg-slate-900/80 border border-slate-800">
+              <span class="block text-[10px] text-slate-400">Peso mensal</span>
+              <span class="font-bold text-slate-100">${Utils.formatCurrency(ev.monthlyImpact)}</span>
+              <span class="text-[10px] text-slate-400 ml-1">(${ev.incomeSharePercent}% renda)</span>
+            </div>
+            <div class="p-2 rounded-lg bg-slate-900/80 border border-slate-800">
+              <span class="block text-[10px] text-slate-400">Saldo do mês após</span>
+              <span class="font-bold ${afterClass}">${Utils.formatCurrency(balanceAfterCurrent)}</span>
+              <span class="block text-[10px] text-slate-500">Antes: ${Utils.formatCurrency(currentBase.balanceBefore)}</span>
+            </div>
+            <div class="p-2 rounded-lg bg-slate-900/80 border border-slate-800">
+              <span class="block text-[10px] text-slate-400">${thirdMetricLabel}</span>
+              <span class="font-bold ${thirdMetricClass}">${thirdMetricValue}</span>
+            </div>
+          </div>
+
+          ${progressBarHtml}
+          ${categoryWarningHtml}
+
+          <div class="p-2.5 rounded-lg ${meta.boxBgClass} border ${meta.borderClass} text-slate-200 text-[11px] leading-relaxed">
+            <strong class="${meta.textClass}">Diagnóstico:</strong> ${Utils.escapeHTML(ev.recommendation)}
+          </div>
+
+          ${timelineChipsHtml}
+          ${baselineFootnoteHtml}
+        </div>
+      `;
+    },
+
+    renderPlanningModalList() {
+      if (!this.plansListContainer) return;
+
+      const plans = [...(this.state.plans || [])].sort((a, b) => {
+        if (a.status !== b.status) return a.status === 'active' ? -1 : 1;
+        return 0;
+      });
+
+      if (this.plansCountBadge) {
+        this.plansCountBadge.textContent = `${plans.length} ${plans.length === 1 ? 'plano' : 'planos'}`;
+      }
+
+      if (plans.length === 0) {
+        this.plansListContainer.innerHTML = `
+          <div class="text-center py-6 px-4 rounded-xl bg-slate-900/40 border border-slate-800 text-slate-400 space-y-1.5">
+            <i class="fa-solid fa-compass text-2xl text-slate-600"></i>
+            <p class="text-xs font-semibold text-slate-300">Nenhum planejamento salvo ainda</p>
+            <p class="text-[11px] text-slate-500">Use o simulador acima para testar uma compra e salvar para acompanhar ou efetivar depois.</p>
+          </div>
+        `;
+        return;
+      }
+
+      let html = '';
+      plans.forEach(plan => {
+        const catColor = CATEGORY_COLORS[plan.category] || '#6366f1';
+        const catIcon = CATEGORY_ICONS[plan.category] || 'fa-tags';
+        const isCompleted = plan.status === 'completed';
+        const ev = isCompleted ? null : this.evaluatePlan(plan);
+        const statusMeta = isCompleted ? this.getPlanStatusMeta('completed') : ev.statusMeta;
+        const modeBadge = plan.mode === 'save' ? 'Juntar/mês' : (plan.installments > 1 ? `Parcelado (${plan.installments}x)` : 'À vista (1x)');
+
+        let detailLine = '';
+        let progressLine = '';
+
+        if (isCompleted) {
+          const completedDate = plan.completedAt ? Utils.formatDate(plan.completedAt.slice(0, 10)) : '';
+          detailLine = `Alvo: <strong class="text-slate-200">${Utils.formatCurrency(plan.targetAmount)}</strong>${completedDate ? ` • Efetivado em ${completedDate}` : ''}`;
+        } else if (plan.mode === 'save') {
+          const eta = ev.targetCompletionPeriod ? `Previsão: ${this.formatCompactPeriod(ev.targetCompletionPeriod)} (${ev.monthsNeeded}m)` : 'Sem aporte mensal';
+          detailLine = `Aporte: <strong class="text-slate-200">${Utils.formatCurrency(plan.monthlyContribution)}/mês</strong> • ${eta}`;
+          progressLine = `
+            <div class="space-y-1">
+              <div class="flex items-center justify-between text-[11px] text-slate-400">
+                <span>Guardado: <strong class="text-slate-200">${Utils.formatCurrency(plan.savedAmount)}</strong> de ${Utils.formatCurrency(plan.targetAmount)}</span>
+                <span>${ev.progressPercent}%</span>
+              </div>
+              <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                <div class="h-full rounded-full" style="width: ${ev.progressPercent}%; background-color: ${statusMeta.barColor};"></div>
+              </div>
+            </div>
+          `;
+        } else {
+          const financedText = ev.remainingAmount === 0
+            ? '100% coberto pela entrada'
+            : (plan.installments > 1 ? `${plan.installments}x de ${Utils.formatCurrency(ev.monthlyImpact)}` : Utils.formatCurrency(ev.monthlyImpact));
+          detailLine = `Alvo: <strong class="text-slate-200">${Utils.formatCurrency(plan.targetAmount)}</strong> • Impacto: <strong class="text-slate-200">${financedText}</strong> • Pior mês: <span class="${ev.worstMonth.balanceAfter >= 0 ? 'text-slate-200' : 'text-rose-300'} font-semibold">${Utils.formatCurrency(ev.worstMonth.balanceAfter)}</span>`;
+        }
+
+        const actionsHtml = isCompleted
+          ? `
+            <button type="button" data-plan-reopen="${plan.id}" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[11px] font-semibold transition-colors flex items-center gap-1.5">
+              <i class="fa-solid fa-rotate-left text-[10px]"></i>
+              <span>Reabrir</span>
+            </button>
+            <button type="button" data-plan-delete="${plan.id}" class="action-icon-btn text-slate-400 hover:text-rose-400 hover:bg-rose-500/10" title="Excluir planejamento">
+              <i class="fa-solid fa-trash text-xs"></i>
+            </button>
+          `
+          : `
+            <button type="button" data-plan-complete="${plan.id}" class="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[11px] font-semibold transition-colors flex items-center gap-1.5">
+              <i class="fa-solid fa-check text-[10px]"></i>
+              <span>Efetivar Compra</span>
+            </button>
+            <button type="button" data-plan-edit="${plan.id}" class="action-icon-btn text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10" title="Editar planejamento">
+              <i class="fa-solid fa-pen-to-square text-xs"></i>
+            </button>
+            <button type="button" data-plan-delete="${plan.id}" class="action-icon-btn text-slate-400 hover:text-rose-400 hover:bg-rose-500/10" title="Excluir planejamento">
+              <i class="fa-solid fa-trash text-xs"></i>
+            </button>
+          `;
+
+        html += `
+          <div class="p-3.5 rounded-xl bg-slate-900/60 border border-slate-700/60 space-y-2.5">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+              <div class="flex items-center gap-2.5 min-w-0">
+                <div class="w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center text-xs" style="background-color: ${catColor}20; color: ${catColor};">
+                  <i class="fa-solid ${catIcon}"></i>
+                </div>
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span class="font-bold text-slate-100 text-xs truncate">${Utils.escapeHTML(plan.title)}</span>
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-800 text-slate-300 border border-slate-700">${modeBadge}</span>
+                  </div>
+                  <div class="text-[11px] text-slate-400 mt-0.5">
+                    ${Utils.escapeHTML(plan.category)} • ${Utils.escapeHTML(plan.paymentMethod)}
+                  </div>
+                </div>
+              </div>
+              <span class="status-pill ${statusMeta.pillClass} text-[10px] flex-shrink-0">${statusMeta.label}</span>
+            </div>
+
+            <div class="text-[11px] text-slate-400">
+              ${detailLine}
+            </div>
+
+            ${progressLine}
+
+            <div class="pt-1 flex items-center justify-end gap-1.5 border-t border-slate-800/80">
+              ${actionsHtml}
+            </div>
+          </div>
+        `;
+      });
+
+      this.plansListContainer.innerHTML = html;
+
+      this.plansListContainer.querySelectorAll('[data-plan-complete]').forEach(btn => {
+        btn.addEventListener('click', () => this.completePlan(btn.getAttribute('data-plan-complete')));
+      });
+      this.plansListContainer.querySelectorAll('[data-plan-edit]').forEach(btn => {
+        btn.addEventListener('click', () => this.openEditPlan(btn.getAttribute('data-plan-edit')));
+      });
+      this.plansListContainer.querySelectorAll('[data-plan-reopen]').forEach(btn => {
+        btn.addEventListener('click', () => this.reopenPlan(btn.getAttribute('data-plan-reopen')));
+      });
+      this.plansListContainer.querySelectorAll('[data-plan-delete]').forEach(btn => {
+        btn.addEventListener('click', () => this.deletePlan(btn.getAttribute('data-plan-delete')));
+      });
+    },
+
+    handlePlanningSubmit(e) {
+      e.preventDefault();
+      const draft = this.getPlanFormDraft();
+
+      if (!draft.title) {
+        Toast.show('Informe o que deseja comprar.', 'warning');
+        this.planTitleInput?.focus();
+        return;
+      }
+      if (draft.targetAmount <= 0) {
+        Toast.show('O valor total estimado deve ser maior que zero.', 'warning');
+        this.planTargetAmountInput?.focus();
+        return;
+      }
+
+      const remaining = Math.max(0, Math.round((draft.targetAmount - draft.savedAmount) * 100) / 100);
+      if (draft.mode === 'save' && remaining > 0 && draft.monthlyContribution <= 0) {
+        Toast.show('Informe quanto pretende guardar por mês ou use um atalho.', 'warning');
+        this.planMonthlyContributionInput?.focus();
+        return;
+      }
+
+      if (!Array.isArray(this.state.plans)) this.state.plans = [];
+
+      if (draft.id) {
+        const idx = this.state.plans.findIndex(p => p.id === draft.id);
+        if (idx !== -1) {
+          const existing = this.state.plans[idx];
+          this.state.plans[idx] = Storage.normalizePlan({
+            ...existing,
+            ...draft,
+            id: existing.id,
+            status: existing.status,
+            completedAt: existing.completedAt,
+            createdAt: existing.createdAt,
+            updatedAt: new Date().toISOString()
+          });
+          Toast.show(`Planejamento "${draft.title}" atualizado!`, 'success');
+        }
+      } else {
+        const created = Storage.normalizePlan({
+          ...draft,
+          id: Utils.generateUUID(),
+          status: 'active',
+          createdAt: new Date().toISOString()
+        });
+        this.state.plans.unshift(created);
+        Toast.show(`Planejamento "${created.title}" salvo!`, 'success');
+      }
+
+      Storage.save(this.state);
+      this.resetPlanningForm();
+      this.render();
+    },
+
+    getEffectivePlanStartDate() {
+      const todayISO = Utils.getTodayISO();
+      const period = this.state.currentPeriod;
+      if (todayISO.startsWith(period)) return todayISO;
+
+      const dayNum = parseInt(todayISO.split('-')[2], 10) || 1;
+      const [year, month] = period.split('-').map(Number);
+      const daysInMonth = new Date(year, month, 0).getDate();
+      const clampedDay = String(Math.min(dayNum, daysInMonth)).padStart(2, '0');
+      return `${period}-${clampedDay}`;
+    },
+
+    async completePlan(planId) {
+      const plan = (this.state.plans || []).find(p => p.id === planId);
+      if (!plan || plan.status === 'completed') return;
+
+      const remainingAmount = Math.max(0, Math.round((plan.targetAmount - plan.savedAmount) * 100) / 100);
+      const shouldLaunchExpenses = plan.mode === 'installment' && remainingAmount > 0;
+
+      let confirmMsg = '';
+      if (shouldLaunchExpenses) {
+        const condText = plan.installments > 1
+          ? `${plan.installments} parcelas em ${plan.paymentMethod}`
+          : `1 lançamento à vista (${plan.paymentMethod})`;
+        const entryNote = plan.savedAmount > 0
+          ? ` (descontando ${Utils.formatCurrency(plan.savedAmount)} de entrada/reserva já guardada)`
+          : '';
+        confirmMsg = `Deseja efetivar "${plan.title}"? Será lançado o valor de ${Utils.formatCurrency(remainingAmount)}${entryNote} em Gastos Diários (${condText}, categoria ${plan.category}).`;
+      } else if (plan.mode === 'save') {
+        confirmMsg = `Marcar a meta "${plan.title}" como efetivada? Como é um plano de economia acumulada, nenhum gasto parcelado será lançado automaticamente no mês.`;
+      } else {
+        confirmMsg = `Marcar "${plan.title}" como concluído? Como o valor já está 100% coberto pela entrada/reserva, nenhum gasto mensal adicional será lançado.`;
+      }
+
+      const confirmed = await ConfirmDialog.open({
+        title: 'Efetivar Compra Planejada',
+        message: confirmMsg
+      });
+      if (!confirmed) return;
+
+      if (shouldLaunchExpenses) {
+        const startDateISO = this.getEffectivePlanStartDate();
+        const { installments: createdExpenses } = this.buildInstallmentExpenses({
+          description: plan.title,
+          amount: remainingAmount,
+          amountType: 'total',
+          count: plan.installments,
+          startDateISO,
+          category: plan.category,
+          method: plan.paymentMethod
+        });
+        this.state.expenses.unshift(...createdExpenses);
+        Toast.show(
+          createdExpenses.length > 1
+            ? `Compra "${plan.title}" efetivada em ${createdExpenses.length}x nos Gastos Diários!`
+            : `Compra "${plan.title}" lançada em Gastos Diários!`,
+          'success'
+        );
+      } else {
+        Toast.show(`Planejamento "${plan.title}" marcado como efetivado!`, 'success');
+      }
+
+      plan.status = 'completed';
+      plan.completedAt = new Date().toISOString();
+      plan.updatedAt = new Date().toISOString();
+
+      if (this.planEditId?.value === plan.id) {
+        this.resetPlanningForm();
+      }
+
+      Storage.save(this.state);
+      this.render();
+    },
+
+    reopenPlan(planId) {
+      const plan = (this.state.plans || []).find(p => p.id === planId);
+      if (!plan) return;
+
+      plan.status = 'active';
+      plan.completedAt = null;
+      plan.updatedAt = new Date().toISOString();
+
+      Storage.save(this.state);
+      this.render();
+      Toast.show(`Planejamento "${plan.title}" reaberto.`, 'info');
+    },
+
+    async deletePlan(planId) {
+      const plan = (this.state.plans || []).find(p => p.id === planId);
+      if (!plan) return;
+
+      const confirmed = await ConfirmDialog.open({
+        title: 'Excluir Planejamento',
+        message: `Deseja remover "${plan.title}" dos seus planejamentos? Gastos já lançados anteriormente não serão apagados.`
+      });
+      if (!confirmed) return;
+
+      this.state.plans = (this.state.plans || []).filter(p => p.id !== planId);
+
+      if (this.planEditId?.value === planId) {
+        this.resetPlanningForm();
+      }
+
+      Storage.save(this.state);
+      this.render();
+      Toast.show('Planejamento excluído.', 'info');
+    },
+
+    // ========================================================================
+    // ALERTAS DE VENCIMENTO
     // ========================================================================
     getAlertSettings() {
       this.state.alertSettings = Utils.normalizeAlertSettings(this.state.alertSettings);
@@ -1806,146 +3421,6 @@
       const totalAmount = all.reduce((sum, item) => sum + (item.bill.amount || 0), 0);
 
       return { overdue, dueToday, upcoming, all, totalAmount, daysBefore };
-    },
-
-    buildAlertsWhatsAppMessage(alertData) {
-      const lines = ['🔔 *FinFlow — Alerta de Vencimentos*', ''];
-
-      if (alertData.overdue.length > 0) {
-        lines.push(`🚨 *Atrasadas (${alertData.overdue.length}):*`);
-        alertData.overdue.forEach(({ bill, status }) => {
-          const days = Math.abs(status.diffDays);
-          lines.push(`• ${bill.title} — ${Utils.formatCurrency(bill.amount)} (venceu em ${Utils.formatDate(bill.dueDate)} • ${days}d de atraso)`);
-        });
-        lines.push('');
-      }
-
-      if (alertData.dueToday.length > 0) {
-        lines.push(`⏰ *Vencem Hoje (${alertData.dueToday.length}):*`);
-        alertData.dueToday.forEach(({ bill }) => {
-          lines.push(`• ${bill.title} — ${Utils.formatCurrency(bill.amount)} (${bill.category})`);
-        });
-        lines.push('');
-      }
-
-      if (alertData.upcoming.length > 0) {
-        lines.push(`📅 *Próximos ${alertData.daysBefore} dia(s) (${alertData.upcoming.length}):*`);
-        alertData.upcoming.forEach(({ bill, status }) => {
-          const dayLabel = status.diffDays === 1 ? 'amanhã' : `em ${status.diffDays} dias`;
-          lines.push(`• ${bill.title} — ${Utils.formatCurrency(bill.amount)} (${Utils.formatDate(bill.dueDate)} • ${dayLabel})`);
-        });
-        lines.push('');
-      }
-
-      lines.push(`💰 *Total em alerta:* ${Utils.formatCurrency(alertData.totalAmount)}`);
-      lines.push('');
-      lines.push('_Enviado pelo FinFlow_');
-
-      return lines.join('\n');
-    },
-
-    buildSingleBillWhatsAppMessage(bill) {
-      const settings = this.getAlertSettings();
-      const status = Utils.calculateBillStatus(bill.dueDate, bill.paid, settings.daysBefore);
-
-      let header = '📅 *FinFlow — Lembrete de Conta*';
-      if (status.key === 'overdue') header = '🚨 *FinFlow — Conta Atrasada*';
-      else if (status.diffDays === 0) header = '⏰ *FinFlow — Conta Vence Hoje*';
-      else if (status.diffDays === 1) header = '⏳ *FinFlow — Conta Vence Amanhã*';
-
-      return [
-        header,
-        '',
-        `• *Conta:* ${bill.title}`,
-        `• *Valor:* ${Utils.formatCurrency(bill.amount)}`,
-        `• *Vencimento:* ${Utils.formatDate(bill.dueDate)} (${status.label})`,
-        `• *Categoria:* ${bill.category}`,
-        '',
-        '_Enviado pelo FinFlow_'
-      ].join('\n');
-    },
-
-    openWhatsAppWithMessage(message, customPhone = null) {
-      const settings = this.getAlertSettings();
-      const rawPhone = customPhone !== null ? customPhone : settings.whatsappPhone;
-      const phone = Utils.formatWhatsappPhone(rawPhone);
-      const encoded = encodeURIComponent(message);
-      const url = phone
-        ? `https://wa.me/${phone}?text=${encoded}`
-        : `https://wa.me/?text=${encoded}`;
-
-      const popup = window.open(url, '_blank', 'noopener,noreferrer');
-      if (!popup) {
-        window.location.href = url;
-      }
-    },
-
-    sendDueAlertsToWhatsApp(customDaysBefore = null, customPhone = null) {
-      const settings = this.getAlertSettings();
-      if (customDaysBefore === null && !settings.whatsappEnabled) {
-        Toast.show('O envio para o WhatsApp está desativado nas configurações de alertas.', 'warning');
-        return;
-      }
-
-      const alertData = this.getDueAlertBills(customDaysBefore);
-      if (alertData.all.length === 0) {
-        const periodPending = this.state.bills
-          .filter(b => !b.paid && b.dueDate && b.dueDate.startsWith(this.state.currentPeriod))
-          .slice()
-          .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
-
-        if (periodPending.length > 0) {
-          const totalPeriodPending = periodPending.reduce((s, b) => s + (b.amount || 0), 0);
-          const lines = [
-            `📋 *FinFlow — Contas Pendentes de ${Utils.formatPeriod(this.state.currentPeriod)}*`,
-            ''
-          ];
-          periodPending.forEach(b => {
-            lines.push(`• ${b.title} — ${Utils.formatCurrency(b.amount)} (vence ${Utils.formatDate(b.dueDate)})`);
-          });
-          lines.push('');
-          lines.push(`💰 *Total pendente no mês:* ${Utils.formatCurrency(totalPeriodPending)}`);
-          lines.push('');
-          lines.push('_Enviado pelo FinFlow_');
-          this.openWhatsAppWithMessage(lines.join('\n'), customPhone);
-          return;
-        }
-
-        const okMsg = [
-          '✅ *FinFlow — Contas em Dia*',
-          `Nenhuma conta atrasada ou vencendo nos próximos ${alertData.daysBefore} dia(s).`,
-          '',
-          '_Enviado pelo FinFlow_'
-        ].join('\n');
-        this.openWhatsAppWithMessage(okMsg, customPhone);
-        return;
-      }
-
-      const msg = this.buildAlertsWhatsAppMessage(alertData);
-      this.openWhatsAppWithMessage(msg, customPhone);
-    },
-
-    sendSingleBillToWhatsApp(billId) {
-      const settings = this.getAlertSettings();
-      if (!settings.whatsappEnabled) {
-        Toast.show('O envio para o WhatsApp está desativado nas configurações de alertas.', 'warning');
-        return;
-      }
-      const bill = this.state.bills.find(b => b.id === billId);
-      if (!bill) return;
-
-      const msg = this.buildSingleBillWhatsAppMessage(bill);
-      this.openWhatsAppWithMessage(msg);
-    },
-
-    sendModalSummaryToWhatsApp() {
-      if (this.whatsappEnabledToggle && !this.whatsappEnabledToggle.checked) {
-        Toast.show('Ative a opção "Envio para o WhatsApp" para enviar lembretes.', 'warning');
-        return;
-      }
-      const days = this.alertDaysBeforeSelect ? Number(this.alertDaysBeforeSelect.value) : null;
-      const phone = this.whatsappPhoneInput ? this.whatsappPhoneInput.value : '';
-      this.sendDueAlertsToWhatsApp(days, phone);
     },
 
     renderDueAlerts() {
@@ -2026,11 +3501,6 @@
         this.alertsBannerSubtitle.textContent = `Total pendente em alerta: ${Utils.formatCurrency(alertData.totalAmount)}`;
       }
 
-      if (this.sendAlertsWhatsappBtn) {
-        this.sendAlertsWhatsappBtn.classList.toggle('hidden', !settings.whatsappEnabled);
-        this.sendAlertsWhatsappBtn.classList.toggle('inline-flex', settings.whatsappEnabled);
-      }
-
       if (this.alertsBannerList) {
         const visibleItems = alertData.all.slice(0, 6);
         let cardsHtml = '';
@@ -2053,11 +3523,6 @@
                 </p>
               </div>
               <div class="flex items-center gap-1.5 shrink-0">
-                ${settings.whatsappEnabled ? `
-                  <button data-banner-wa-id="${bill.id}" class="w-8 h-8 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 flex items-center justify-center transition-smooth" title="Enviar esta conta no WhatsApp">
-                    <i class="fa-brands fa-whatsapp text-sm"></i>
-                  </button>
-                ` : ''}
                 <button data-banner-pay-id="${bill.id}" class="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold transition-smooth active:scale-95" title="Marcar conta como paga">
                   Pagar
                 </button>
@@ -2081,13 +3546,6 @@
           btn.addEventListener('click', () => {
             const id = btn.getAttribute('data-banner-pay-id');
             this.toggleBillStatus(id);
-          });
-        });
-
-        this.alertsBannerList.querySelectorAll('[data-banner-wa-id]').forEach(btn => {
-          btn.addEventListener('click', () => {
-            const id = btn.getAttribute('data-banner-wa-id');
-            this.sendSingleBillToWhatsApp(id);
           });
         });
       }
@@ -2140,8 +3598,6 @@
       if (this.alertEnabledToggle) this.alertEnabledToggle.checked = settings.enabled;
       if (this.alertDaysBeforeSelect) this.alertDaysBeforeSelect.value = String(settings.daysBefore);
       if (this.alertBrowserNotifyToggle) this.alertBrowserNotifyToggle.checked = settings.browserNotify;
-      if (this.whatsappEnabledToggle) this.whatsappEnabledToggle.checked = settings.whatsappEnabled;
-      if (this.whatsappPhoneInput) this.whatsappPhoneInput.value = settings.whatsappPhone || '';
 
       this.updateAlertModalControlsState();
       this.openModal(this.alertModal);
@@ -2149,7 +3605,6 @@
 
     updateAlertModalControlsState() {
       const alertsOn = this.alertEnabledToggle ? this.alertEnabledToggle.checked : true;
-      const whatsappOn = this.whatsappEnabledToggle ? this.whatsappEnabledToggle.checked : true;
 
       if (this.alertOptionsGroup) {
         this.alertOptionsGroup.classList.toggle('opacity-50', !alertsOn);
@@ -2158,17 +3613,6 @@
       if (this.alertDaysBeforeSelect) this.alertDaysBeforeSelect.disabled = !alertsOn;
       if (this.alertBrowserNotifyToggle) this.alertBrowserNotifyToggle.disabled = !alertsOn;
 
-      if (this.whatsappOptionsGroup) {
-        this.whatsappOptionsGroup.classList.toggle('opacity-50', !whatsappOn);
-        this.whatsappOptionsGroup.classList.toggle('pointer-events-none', !whatsappOn);
-      }
-      if (this.whatsappPhoneInput) this.whatsappPhoneInput.disabled = !whatsappOn;
-      if (this.testWhatsappAlertBtn) {
-        this.testWhatsappAlertBtn.disabled = !whatsappOn;
-        this.testWhatsappAlertBtn.classList.toggle('opacity-50', !whatsappOn);
-        this.testWhatsappAlertBtn.classList.toggle('cursor-not-allowed', !whatsappOn);
-      }
-
       this.updateAlertModalPreview();
     },
 
@@ -2176,15 +3620,14 @@
       if (!this.alertModalSummaryBox) return;
 
       const alertsOn = this.alertEnabledToggle ? this.alertEnabledToggle.checked : true;
-      const whatsappOn = this.whatsappEnabledToggle ? this.whatsappEnabledToggle.checked : true;
       const days = this.alertDaysBeforeSelect ? Number(this.alertDaysBeforeSelect.value) : 3;
       const alertData = this.getDueAlertBills(days);
 
-      if (!alertsOn && !whatsappOn) {
+      if (!alertsOn) {
         this.alertModalSummaryBox.innerHTML = `
           <div class="flex items-center gap-2 text-slate-400">
             <i class="fa-solid fa-bell-slash text-slate-500"></i>
-            <span>Alertas visuais e integração com WhatsApp estão desativados.</span>
+            <span>Os alertas de vencimento estão desativados.</span>
           </div>
         `;
         return;
@@ -2219,8 +3662,6 @@
       const prevSettings = this.getAlertSettings();
       const enabled = this.alertEnabledToggle ? this.alertEnabledToggle.checked : true;
       const daysBefore = this.alertDaysBeforeSelect ? Number(this.alertDaysBeforeSelect.value) : 3;
-      const whatsappEnabled = this.whatsappEnabledToggle ? this.whatsappEnabledToggle.checked : true;
-      const whatsappPhone = this.whatsappPhoneInput ? this.whatsappPhoneInput.value.replace(/\D/g, '').slice(0, 15) : '';
       let browserNotify = this.alertBrowserNotifyToggle ? this.alertBrowserNotifyToggle.checked : false;
 
       if (enabled && browserNotify) {
@@ -2250,8 +3691,6 @@
       this.state.alertSettings = Utils.normalizeAlertSettings({
         enabled,
         daysBefore,
-        whatsappEnabled,
-        whatsappPhone,
         browserNotify,
         lastNotifiedDate: prevSettings.lastNotifiedDate,
         dismissedDate: null
@@ -2261,14 +3700,10 @@
       this.closeModal(this.alertModal);
       this.render();
 
-      if (!enabled && !whatsappEnabled) {
-        Toast.show('Alertas de vencimento e WhatsApp desativados.', 'info');
-      } else if (!enabled) {
-        Toast.show('Alertas de vencimento desativados. WhatsApp continua ativo.', 'info');
-      } else if (!whatsappEnabled) {
-        Toast.show('Alertas salvos. Botões do WhatsApp desativados.', 'info');
+      if (!enabled) {
+        Toast.show('Alertas de vencimento desativados.', 'info');
       } else {
-        Toast.show('Configurações de alertas e WhatsApp salvas!', 'success');
+        Toast.show('Configurações de alertas salvas!', 'success');
       }
     },
 
@@ -2359,11 +3794,6 @@
                 ${Utils.formatCurrency(bill.amount)}
               </span>
               <div class="flex items-center gap-1">
-                ${(!bill.paid && alertSettings.whatsappEnabled) ? `
-                  <button data-whatsapp-bill-id="${bill.id}" class="action-icon-btn text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/15" title="Enviar lembrete no WhatsApp">
-                    <i class="fa-brands fa-whatsapp text-sm"></i>
-                  </button>
-                ` : ''}
                 <button data-edit-bill-id="${bill.id}" class="action-icon-btn text-slate-400 hover:text-indigo-400 hover:bg-slate-800" title="Editar conta">
                   <i class="fa-solid fa-pen text-xs"></i>
                 </button>
@@ -2384,14 +3814,6 @@
         chk.addEventListener('change', (e) => {
           const id = e.target.getAttribute('data-bill-id');
           this.toggleBillStatus(id);
-        });
-      });
-
-      // Eventos: Lembrete individual via WhatsApp
-      this.billsListContainer.querySelectorAll('[data-whatsapp-bill-id]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const id = btn.getAttribute('data-whatsapp-bill-id');
-          this.sendSingleBillToWhatsApp(id);
         });
       });
 

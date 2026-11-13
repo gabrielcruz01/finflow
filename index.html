@@ -90,7 +90,7 @@
         <!-- Ações Rápidas (Desktop & Header) -->
         <div class="flex items-center gap-2">
           <!-- Configurar Renda -->
-          <button id="openIncomeModalBtn" class="hidden sm:flex items-center gap-2 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-semibold text-slate-200 transition-smooth hover:border-slate-600 shadow-sm" title="Definir Renda Mensal">
+          <button id="openIncomeModalBtn" class="hidden sm:flex items-center gap-2 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-semibold text-slate-200 transition-smooth hover:border-slate-600 shadow-sm" title="Gerenciar Fontes de Renda">
             <i class="fa-solid fa-hand-holding-dollar text-emerald-400"></i>
             <span>Renda</span>
           </button>
@@ -101,8 +101,14 @@
             <span>Metas</span>
           </button>
 
-          <!-- Alertas de Vencimento & WhatsApp -->
-          <button id="openAlertModalBtn" class="hidden sm:flex items-center gap-2 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-semibold text-slate-200 transition-smooth hover:border-slate-600 shadow-sm" title="Alertas de Vencimento e WhatsApp">
+          <!-- Planejamento de Compras -->
+          <button id="openPlanningHeaderBtn" class="hidden sm:flex items-center gap-2 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-semibold text-slate-200 transition-smooth hover:border-slate-600 shadow-sm" title="Simular e Planejar Compras">
+            <i class="fa-solid fa-compass text-indigo-400"></i>
+            <span>Planejar</span>
+          </button>
+
+          <!-- Alertas de Vencimento -->
+          <button id="openAlertModalBtn" class="hidden sm:flex items-center gap-2 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-semibold text-slate-200 transition-smooth hover:border-slate-600 shadow-sm" title="Configurar Alertas de Vencimento">
             <i class="fa-solid fa-bell text-amber-400"></i>
             <span>Alertas</span>
             <span id="headerAlertBadge" class="hidden min-w-[18px] h-[18px] px-1.5 rounded-full bg-rose-500 text-white text-[10px] font-bold text-center leading-[18px]">0</span>
@@ -152,10 +158,6 @@
         </div>
 
         <div class="flex flex-wrap items-center gap-2 shrink-0">
-          <button id="sendAlertsWhatsappBtn" class="hidden inline-flex items-center gap-2 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl transition-smooth shadow-lg shadow-emerald-600/20 active:scale-95">
-            <i class="fa-brands fa-whatsapp text-sm"></i>
-            <span>Enviar no WhatsApp</span>
-          </button>
           <button id="openAlertsFromBannerBtn" class="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold rounded-xl transition-smooth" title="Configurar Alertas">
             <i class="fa-solid fa-sliders text-amber-400"></i>
             <span>Configurar</span>
@@ -178,7 +180,7 @@
         <div class="bg-slate-800/90 border border-slate-700/70 hover:border-slate-600 rounded-2xl p-5 shadow-sm transition-smooth relative overflow-hidden group">
           <div class="flex items-center justify-between">
             <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Renda Mensal</span>
-            <button id="quickEditIncomeBtn" class="text-slate-400 hover:text-emerald-400 p-1 transition-colors text-xs" title="Editar Renda">
+            <button id="quickEditIncomeBtn" class="text-slate-400 hover:text-emerald-400 p-1 transition-colors text-xs" title="Gerenciar Fontes de Renda">
               <i class="fa-solid fa-pen-to-square"></i>
             </button>
           </div>
@@ -186,7 +188,7 @@
             <div id="kpiIncome" class="text-2xl font-bold text-slate-100 tracking-tight">R$ 0,00</div>
             <p class="text-xs text-slate-400 mt-1 flex items-center gap-1.5">
               <span class="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>
-              Base orçamentária do mês
+              <span id="kpiIncomeSubtitle">Base orçamentária do mês</span>
             </p>
           </div>
           <div class="absolute -right-3 -bottom-3 w-16 h-16 bg-emerald-500/5 rounded-full blur-xl group-hover:bg-emerald-500/10 transition-colors"></div>
@@ -315,8 +317,8 @@
                 <button data-bill-filter="paid" class="bill-filter-btn px-2.5 py-1 rounded-md font-medium text-slate-400 hover:text-white transition-smooth">Pagas</button>
               </div>
 
-              <!-- Botão Configurar Alertas & WhatsApp -->
-              <button id="openAlertBillsBtn" class="tap-target px-2.5 py-1.5 bg-slate-700/60 hover:bg-slate-700 active:scale-95 text-slate-200 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-smooth border border-slate-600/80" title="Configurar Alertas de Vencimento e WhatsApp">
+              <!-- Botão Configurar Alertas -->
+              <button id="openAlertBillsBtn" class="tap-target px-2.5 py-1.5 bg-slate-700/60 hover:bg-slate-700 active:scale-95 text-slate-200 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-smooth border border-slate-600/80" title="Configurar Alertas de Vencimento">
                 <i class="fa-solid fa-bell text-amber-400"></i>
                 <span class="hidden md:inline">Alertas</span>
               </button>
@@ -471,6 +473,27 @@
           </div>
         </section>
 
+        <!-- ==================== SEÇÃO 5: PLANEJAMENTO DE COMPRAS ==================== -->
+        <section class="bg-slate-800/90 border border-slate-700/70 rounded-2xl p-5 sm:p-6 shadow-sm">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-700/60">
+            <div>
+              <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                <i class="fa-solid fa-compass text-indigo-400"></i>
+                Planejamento de Compras
+              </h3>
+              <p class="text-[11px] text-slate-400 mt-0.5">Simule metas e impacto no orçamento</p>
+            </div>
+            <button id="openPlanningModalBtn" class="tap-target px-2.5 py-1.5 bg-slate-700/70 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-smooth border border-slate-600/80" title="Simular Nova Compra">
+              <i class="fa-solid fa-plus text-indigo-400 text-xs"></i>
+              <span>Simular</span>
+            </button>
+          </div>
+
+          <div id="planningBreakdownList" class="mt-4 space-y-3 text-xs">
+            <!-- Inserido dinamicamente via app.js -->
+          </div>
+        </section>
+
         <!-- Card Extra: Distribuição por Método de Pagamento -->
         <section class="bg-slate-800/90 border border-slate-700/70 rounded-2xl p-5 shadow-sm">
           <div class="flex items-center justify-between pb-3 border-b border-slate-700/60">
@@ -503,7 +526,7 @@
         <span class="text-[10px] font-medium mt-1">Metas</span>
       </button>
 
-      <button id="mobileAlertBtn" class="relative flex flex-col items-center justify-center py-1 px-2 text-slate-400 hover:text-white transition-colors" title="Alertas e WhatsApp">
+      <button id="mobileAlertBtn" class="relative flex flex-col items-center justify-center py-1 px-2 text-slate-400 hover:text-white transition-colors" title="Configurar Alertas de Vencimento">
         <div class="relative">
           <i class="fa-solid fa-bell text-base text-amber-400"></i>
           <span id="mobileAlertBadge" class="hidden absolute -top-1.5 -right-2.5 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[9px] font-bold text-center leading-4">0</span>
@@ -525,47 +548,116 @@
 
   <!-- ==================== MODAIS ==================== -->
 
-  <!-- 1. MODAL: CONFIGURAÇÃO DE RENDA MENSAL -->
+  <!-- 1. MODAL: GERENCIAMENTO DE FONTES DE RENDA -->
   <div id="incomeModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
     <div class="modal-backdrop fixed inset-0 bg-slate-950/80 backdrop-blur-sm modal-backdrop-animate"></div>
-    <div class="modal-content relative bg-slate-800 border border-slate-700 w-full max-w-md rounded-2xl shadow-2xl p-6 modal-content-animate z-10">
+    <div class="modal-content relative bg-slate-800 border border-slate-700 w-full max-w-lg rounded-2xl shadow-2xl p-6 modal-content-animate z-10 flex flex-col max-h-[90vh]">
       
-      <div class="flex items-center justify-between pb-4 border-b border-slate-700">
+      <div class="flex items-center justify-between pb-4 border-b border-slate-700 flex-shrink-0">
         <div class="flex items-center gap-2.5">
-          <div class="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
-            <i class="fa-solid fa-hand-holding-dollar text-sm"></i>
+          <div class="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
+            <i class="fa-solid fa-hand-holding-dollar text-base"></i>
           </div>
           <div>
-            <h3 class="font-bold text-white text-base">Definir Renda Mensal</h3>
-            <p class="text-xs text-slate-400">Base para cálculo do saldo disponível</p>
+            <h3 class="font-bold text-white text-base">Fontes de Renda</h3>
+            <p id="incomeModalSubtitle" class="text-xs text-slate-400">Gerencie as entradas do mês</p>
           </div>
         </div>
-        <button data-close-modal="incomeModal" class="text-slate-400 hover:text-white p-1 rounded-lg">
+        <button type="button" data-close-modal="incomeModal" class="text-slate-400 hover:text-white p-1 rounded-lg">
           <i class="fa-solid fa-xmark text-lg"></i>
         </button>
       </div>
 
-      <form id="incomeForm" class="mt-5 space-y-4">
-        <div>
-          <label for="incomeInput" class="block text-xs font-medium text-slate-300 mb-1.5">
-            Valor da Renda Líquida Estimada (R$)
-          </label>
-          <div class="relative">
-            <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-semibold text-sm">R$</span>
-            <input type="text" id="incomeInput" inputmode="numeric" placeholder="0,00" class="money-input w-full pl-11 pr-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-bold text-lg focus:border-indigo-500 transition-colors" required />
+      <div id="incomeModalBody" class="mt-4 flex-1 overflow-y-auto pr-1 space-y-4">
+
+        <!-- Resumo do Mês + Botão Copiar Mês Anterior -->
+        <div class="p-3.5 rounded-xl bg-slate-900/80 border border-slate-700/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 block">Total no Mês</span>
+            <div class="flex items-center gap-2 mt-0.5">
+              <span id="incomeModalTotal" class="text-lg font-bold text-emerald-400">R$ 0,00</span>
+              <span id="incomeModalCountBadge" class="px-2 py-0.5 text-[11px] font-semibold bg-slate-800 border border-slate-700 text-slate-300 rounded-full">0 rendas</span>
+            </div>
           </div>
-          <span class="text-[11px] text-slate-400 mt-1 block">Digite o valor numérico com máscara de centavos automática</span>
+
+          <button type="button" id="replicateIncomesBtn" class="hidden tap-target px-3 py-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 text-xs font-semibold rounded-lg items-center gap-1.5 transition-smooth border border-slate-600/80 self-start sm:self-auto" title="Copiar fontes de renda cadastradas no mês anterior">
+            <i class="fa-solid fa-rotate text-indigo-400"></i>
+            <span>Copiar Mês Anterior</span>
+          </button>
         </div>
 
-        <div class="pt-2 flex items-center justify-end gap-2.5">
-          <button type="button" data-close-modal="incomeModal" class="px-4 py-2.5 bg-slate-700/60 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-colors">
-            Cancelar
-          </button>
-          <button type="submit" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold transition-smooth shadow-md shadow-emerald-600/20">
-            Salvar Renda
-          </button>
+        <!-- Formulário de Adição / Edição -->
+        <form id="incomeForm" class="p-4 rounded-xl bg-slate-900/60 border border-slate-700/70 space-y-3">
+          <input type="hidden" id="incomeEditId" value="" />
+
+          <div class="flex items-center justify-between gap-2">
+            <h4 id="incomeFormTitle" class="text-xs font-bold uppercase tracking-wider text-slate-300">Adicionar Fonte de Renda</h4>
+            <button type="button" id="cancelIncomeEditBtn" class="hidden text-xs font-medium text-slate-400 hover:text-white transition-colors">
+              Cancelar edição
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label for="incomeTitleInput" class="block text-xs font-medium text-slate-300 mb-1">Descrição</label>
+              <input type="text" id="incomeTitleInput" placeholder="Ex: Salário, Projeto Freela..." class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 text-sm focus:border-emerald-500 transition-colors" required />
+            </div>
+
+            <div>
+              <label for="incomeTypeSelect" class="block text-xs font-medium text-slate-300 mb-1">Tipo de Renda</label>
+              <select id="incomeTypeSelect" class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 text-sm focus:border-emerald-500 transition-colors">
+                <option value="Salário">Salário</option>
+                <option value="Freelance / Extra">Freelance / Extra</option>
+                <option value="Benefícios / Auxílio">Benefícios / Auxílio</option>
+                <option value="Investimentos / Dividendos">Investimentos / Dividendos</option>
+                <option value="Bônus / 13º">Bônus / 13º</option>
+                <option value="Vendas / Reembolso">Vendas / Reembolso</option>
+                <option value="Aluguel / Renda Passiva">Aluguel / Renda Passiva</option>
+                <option value="Outros">Outros</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label for="incomeInput" class="block text-xs font-medium text-slate-300 mb-1">Valor (R$)</label>
+              <div class="relative">
+                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-semibold text-xs">R$</span>
+                <input type="text" id="incomeInput" inputmode="numeric" placeholder="0,00" class="money-input w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-bold text-sm focus:border-emerald-500 transition-colors" required />
+              </div>
+            </div>
+
+            <div>
+              <label for="incomeDateInput" class="block text-xs font-medium text-slate-300 mb-1">
+                Data <span class="text-slate-500 font-normal">(opcional)</span>
+              </label>
+              <input type="date" id="incomeDateInput" class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 text-sm focus:border-emerald-500 transition-colors" />
+            </div>
+          </div>
+
+          <div class="pt-1 flex items-center justify-end gap-2">
+            <button type="submit" id="incomeSubmitBtn" class="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white rounded-xl text-xs font-semibold transition-smooth shadow-md shadow-emerald-600/20 flex items-center justify-center gap-1.5">
+              <i class="fa-solid fa-plus"></i>
+              <span>Adicionar Renda</span>
+            </button>
+          </div>
+        </form>
+
+        <!-- Lista de Rendas do Mês -->
+        <div class="space-y-2">
+          <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400">Rendas Cadastradas no Mês</h4>
+          <div id="incomesListContainer" class="space-y-2">
+            <!-- Inserido dinamicamente via app.js -->
+          </div>
         </div>
-      </form>
+
+      </div>
+
+      <div class="pt-4 mt-4 flex items-center justify-end border-t border-slate-700/60 flex-shrink-0">
+        <button type="button" data-close-modal="incomeModal" class="px-4 py-2 bg-slate-700/60 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold transition-colors">
+          Fechar
+        </button>
+      </div>
 
     </div>
   </div>
@@ -791,7 +883,7 @@
   </div>
 
   <!-- 4. MODAL: CONFIRMAÇÃO DE EXCLUSÃO (UX MODERNA, SEM ALERTS NATIVOS) -->
-  <div id="confirmModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div id="confirmModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center p-4">
     <div class="modal-backdrop fixed inset-0 bg-slate-950/80 backdrop-blur-sm modal-backdrop-animate"></div>
     <div class="modal-content relative bg-slate-800 border border-slate-700 w-full max-w-sm rounded-2xl shadow-2xl p-6 modal-content-animate z-10 text-center">
       
@@ -854,7 +946,7 @@
     </div>
   </div>
 
-  <!-- 6. MODAL: CONFIGURAÇÕES DE ALERTAS E WHATSAPP -->
+  <!-- 6. MODAL: CONFIGURAÇÕES DE ALERTAS DE VENCIMENTO -->
   <div id="alertModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
     <div class="modal-backdrop fixed inset-0 bg-slate-950/80 backdrop-blur-sm modal-backdrop-animate"></div>
     <div class="modal-content relative bg-slate-800 border border-slate-700 w-full max-w-lg rounded-2xl shadow-2xl p-6 modal-content-animate z-10 flex flex-col max-h-[90vh]">
@@ -865,7 +957,7 @@
             <i class="fa-solid fa-bell text-base"></i>
           </div>
           <div>
-            <h3 class="font-bold text-white text-base">Alertas de Vencimento &amp; WhatsApp</h3>
+            <h3 class="font-bold text-white text-base">Alertas de Vencimento</h3>
             <p class="text-xs text-slate-400">Ative ou desative lembretes de contas fixas</p>
           </div>
         </div>
@@ -876,7 +968,7 @@
 
       <form id="alertForm" class="mt-4 flex-1 overflow-y-auto pr-1 space-y-4">
         
-        <!-- Bloco 1: Alertas no App -->
+        <!-- Bloco: Alertas no App -->
         <div class="p-4 rounded-xl bg-slate-900/60 border border-slate-700/70 space-y-3.5">
           <div class="flex items-center justify-between gap-3">
             <div>
@@ -920,64 +1012,206 @@
           </div>
         </div>
 
-        <!-- Bloco 2: Integração WhatsApp -->
-        <div class="p-4 rounded-xl bg-slate-900/60 border border-slate-700/70 space-y-3.5">
-          <div class="flex items-center justify-between gap-3">
-            <div class="flex items-center gap-2.5">
-              <div class="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center flex-shrink-0">
-                <i class="fa-brands fa-whatsapp text-base"></i>
-              </div>
-              <div>
-                <h4 class="text-sm font-semibold text-white">Envio para o WhatsApp</h4>
-                <p class="text-xs text-slate-400 mt-0.5">Habilita botões de lembrete no banner e nas contas</p>
-              </div>
-            </div>
-            <label class="relative inline-flex items-center cursor-pointer flex-shrink-0" title="Ativar ou desativar botões do WhatsApp">
-              <input type="checkbox" id="whatsappEnabledToggle" class="sr-only finflow-toggle-checkbox" checked />
-              <div class="finflow-toggle-track w-11 h-6 bg-slate-700 rounded-full transition-colors relative">
-                <div class="finflow-toggle-thumb w-5 h-5 bg-white rounded-full transition-transform absolute top-0.5 left-0.5 shadow-md"></div>
-              </div>
-            </label>
-          </div>
-
-          <div id="whatsappOptionsGroup" class="space-y-2 pt-3 border-t border-slate-800 transition-opacity">
-            <label for="whatsappPhoneInput" class="block text-xs font-semibold text-slate-300">
-              Número padrão do WhatsApp <span class="text-slate-500 font-normal">(opcional)</span>
-            </label>
-            <input type="tel" id="whatsappPhoneInput" inputmode="numeric" placeholder="Ex: 11999998888 (DDD + número)" class="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors" />
-            <p class="text-[11px] text-slate-400 leading-relaxed">
-              Deixe em branco para escolher o contato ou grupo na hora dentro do WhatsApp. Se informar 10 ou 11 dígitos, o código +55 é adicionado automaticamente.
-            </p>
-          </div>
-        </div>
-
         <!-- Preview de Status Atual -->
         <div id="alertModalSummaryBox" class="p-3.5 rounded-xl bg-slate-900/80 border border-slate-700/60 text-xs text-slate-300">
           <!-- Preenchido dinamicamente -->
         </div>
 
-        <div class="pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-t border-slate-700/60 sticky bottom-0 bg-slate-800">
-          <button type="button" id="testWhatsappAlertBtn" class="inline-flex items-center justify-center gap-2 px-3.5 py-2.5 bg-emerald-600/15 hover:bg-emerald-600/25 border border-emerald-500/30 text-emerald-300 rounded-xl text-xs font-semibold transition-smooth">
-            <i class="fa-brands fa-whatsapp text-sm"></i>
-            <span>Enviar Resumo Agora</span>
+        <div class="pt-4 flex items-center justify-end gap-2.5 border-t border-slate-700/60 sticky bottom-0 bg-slate-800">
+          <button type="button" data-close-modal="alertModal" class="px-4 py-2.5 bg-slate-700/60 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-colors">
+            Cancelar
           </button>
-
-          <div class="flex items-center justify-end gap-2.5">
-            <button type="button" data-close-modal="alertModal" class="px-4 py-2.5 bg-slate-700/60 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-colors">
-              Cancelar
-            </button>
-            <button type="submit" class="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-semibold transition-smooth shadow-md shadow-amber-600/20">
-              Salvar Configurações
-            </button>
-          </div>
+          <button type="submit" class="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-semibold transition-smooth shadow-md shadow-amber-600/20">
+            Salvar Configurações
+          </button>
         </div>
       </form>
 
     </div>
   </div>
 
+  <!-- 7. MODAL: PLANEJAMENTO E SIMULADOR DE COMPRAS -->
+  <div id="planningModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="modal-backdrop fixed inset-0 bg-slate-950/80 backdrop-blur-sm modal-backdrop-animate"></div>
+    <div class="modal-content relative bg-slate-800 border border-slate-700 w-full max-w-2xl rounded-2xl shadow-2xl p-6 modal-content-animate z-10 flex flex-col max-h-[90vh]">
+
+      <div class="flex items-center justify-between pb-4 border-b border-slate-700 flex-shrink-0">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center">
+            <i class="fa-solid fa-compass text-base"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-white text-base">Planejamento de Compras</h3>
+            <p class="text-xs text-slate-400">Simule antes de comprar e veja se cabe no seu orçamento</p>
+          </div>
+        </div>
+        <button type="button" data-close-modal="planningModal" class="text-slate-400 hover:text-white p-1 rounded-lg">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <div id="planningModalBody" class="mt-4 flex-1 overflow-y-auto pr-1 space-y-5">
+
+        <!-- Simulador / Formulário -->
+        <form id="planningForm" class="p-4 rounded-xl bg-slate-900/60 border border-slate-700/70 space-y-3.5">
+          <input type="hidden" id="planEditId" value="" />
+          <input type="hidden" id="planModeInput" value="installment" />
+
+          <div class="flex items-center justify-between gap-2">
+            <h4 id="planningFormTitle" class="text-xs font-bold uppercase tracking-wider text-slate-300">Simular Nova Compra</h4>
+            <button type="button" id="cancelPlanningEditBtn" class="hidden text-xs font-medium text-slate-400 hover:text-white transition-colors">
+              Cancelar edição
+            </button>
+          </div>
+
+          <!-- Seletor de Modo -->
+          <div class="grid grid-cols-2 gap-2 p-1 bg-slate-950/80 border border-slate-800 rounded-xl">
+            <button type="button" data-plan-mode="installment" class="plan-mode-btn px-3 py-2 rounded-lg text-xs font-semibold transition-smooth bg-indigo-600 text-white shadow-sm flex items-center justify-center gap-1.5">
+              <i class="fa-solid fa-credit-card"></i>
+              <span>Parcelado / À vista</span>
+            </button>
+            <button type="button" data-plan-mode="save" class="plan-mode-btn px-3 py-2 rounded-lg text-xs font-semibold transition-smooth text-slate-400 hover:text-white flex items-center justify-center gap-1.5">
+              <i class="fa-solid fa-piggy-bank"></i>
+              <span>Juntar por mês</span>
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label for="planTitleInput" class="block text-xs font-medium text-slate-300 mb-1">O que deseja comprar?</label>
+              <input type="text" id="planTitleInput" placeholder="Ex: PC Gamer, Monitor, Viagem..." class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 text-sm focus:border-indigo-500 transition-colors" required />
+            </div>
+
+            <div>
+              <label for="planCategorySelect" class="block text-xs font-medium text-slate-300 mb-1">Categoria</label>
+              <select id="planCategorySelect" class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 text-sm focus:border-indigo-500 transition-colors">
+                <option value="Compras" selected>Compras</option>
+                <option value="Lazer">Lazer</option>
+                <option value="Educação">Educação</option>
+                <option value="Moradia">Moradia</option>
+                <option value="Transporte">Transporte</option>
+                <option value="Saúde">Saúde</option>
+                <option value="Serviços">Serviços</option>
+                <option value="Alimentação">Alimentação</option>
+                <option value="Assinaturas">Assinaturas</option>
+                <option value="Outros">Outros</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label for="planTargetAmountInput" class="block text-xs font-medium text-slate-300 mb-1">Valor total estimado (R$)</label>
+              <div class="relative">
+                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-semibold text-xs">R$</span>
+                <input type="text" id="planTargetAmountInput" inputmode="numeric" placeholder="0,00" class="money-input w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-bold text-sm focus:border-indigo-500 transition-colors" required />
+              </div>
+            </div>
+
+            <div>
+              <label for="planSavedAmountInput" class="block text-xs font-medium text-slate-300 mb-1">
+                Entrada / Já guardado <span class="text-slate-500 font-normal">(opcional)</span>
+              </label>
+              <div class="relative">
+                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-semibold text-xs">R$</span>
+                <input type="text" id="planSavedAmountInput" inputmode="numeric" placeholder="0,00" class="money-input w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-semibold text-sm focus:border-indigo-500 transition-colors" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Campos do Modo A: Comprar Agora (À vista ou Parcelado) -->
+          <div id="planInstallmentFields" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label for="planInstallmentsSelect" class="block text-xs font-medium text-slate-300 mb-1">Condição de pagamento</label>
+              <select id="planInstallmentsSelect" class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 text-sm focus:border-indigo-500 transition-colors">
+                <option value="1">1x (À vista)</option>
+                <option value="2">2x sem juros</option>
+                <option value="3">3x sem juros</option>
+                <option value="4">4x sem juros</option>
+                <option value="5">5x sem juros</option>
+                <option value="6">6x sem juros</option>
+                <option value="8">8x sem juros</option>
+                <option value="10" selected>10x sem juros</option>
+                <option value="12">12x sem juros</option>
+                <option value="15">15x sem juros</option>
+                <option value="18">18x sem juros</option>
+                <option value="24">24x sem juros</option>
+                <option value="36">36x sem juros</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="planPaymentMethodSelect" class="block text-xs font-medium text-slate-300 mb-1">Forma de pagamento (se efetivar)</label>
+              <select id="planPaymentMethodSelect" class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 text-sm focus:border-indigo-500 transition-colors">
+                <option value="Cartão de Crédito" selected>Cartão de Crédito</option>
+                <option value="Pix">Pix</option>
+                <option value="Cartão de Débito">Cartão de Débito</option>
+                <option value="Dinheiro">Dinheiro</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Campos do Modo B: Juntar Mês a Mês -->
+          <div id="planSaveFields" class="hidden space-y-2.5">
+            <div>
+              <label for="planMonthlyContributionInput" class="block text-xs font-medium text-slate-300 mb-1">Quanto pretende guardar por mês (R$)?</label>
+              <div class="relative">
+                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-semibold text-xs">R$</span>
+                <input type="text" id="planMonthlyContributionInput" inputmode="numeric" placeholder="0,00" class="money-input w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-bold text-sm focus:border-indigo-500 transition-colors" />
+              </div>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-1.5">
+              <span class="text-[11px] text-slate-400 mr-1">Atalhos:</span>
+              <button type="button" data-plan-preset-months="6" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] font-medium text-slate-200 transition-colors">
+                Meta em 6 meses
+              </button>
+              <button type="button" data-plan-preset-months="12" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] font-medium text-slate-200 transition-colors">
+                Meta em 12 meses
+              </button>
+              <button type="button" id="planUseFreeBalanceBtn" class="px-2.5 py-1 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-[11px] font-medium text-indigo-300 transition-colors">
+                Usar 50% da folga atual
+              </button>
+            </div>
+          </div>
+
+          <!-- Resultado da Simulação em Tempo Real -->
+          <div id="planSimulationPreview" class="p-3.5 rounded-xl bg-slate-950/70 border border-slate-700/70 space-y-2.5 text-xs">
+            <!-- Preenchido dinamicamente via app.js -->
+          </div>
+
+          <div class="pt-1 flex items-center justify-end gap-2">
+            <button type="submit" id="planningSubmitBtn" class="w-full sm:w-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white rounded-xl text-xs font-semibold transition-smooth shadow-md shadow-indigo-600/20 flex items-center justify-center gap-1.5">
+              <i class="fa-solid fa-bookmark"></i>
+              <span>Salvar Planejamento</span>
+            </button>
+          </div>
+        </form>
+
+        <!-- Lista de Planejamentos Salvos -->
+        <div class="space-y-2.5">
+          <div class="flex items-center justify-between">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400">Planejamentos Salvos</h4>
+            <span id="plansCountBadge" class="px-2 py-0.5 text-[11px] font-semibold bg-slate-900 border border-slate-700 text-slate-300 rounded-full">0 planos</span>
+          </div>
+          <div id="plansListContainer" class="space-y-2.5">
+            <!-- Inserido dinamicamente via app.js -->
+          </div>
+        </div>
+
+      </div>
+
+      <div class="pt-4 mt-4 flex items-center justify-end border-t border-slate-700/60 flex-shrink-0">
+        <button type="button" data-close-modal="planningModal" class="px-4 py-2 bg-slate-700/60 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold transition-colors">
+          Fechar
+        </button>
+      </div>
+
+    </div>
+  </div>
+
   <!-- ==================== CONTAINER DE TOASTS FLUTUANTES ==================== -->
-  <div id="toastContainer" class="fixed bottom-20 sm:bottom-6 right-4 sm:right-6 z-50 flex flex-col gap-2.5 pointer-events-none max-w-xs sm:max-w-sm w-full">
+  <div id="toastContainer" class="fixed bottom-20 sm:bottom-6 right-4 sm:right-6 z-[70] flex flex-col gap-2.5 pointer-events-none max-w-xs sm:max-w-sm w-full">
     <!-- Toasts gerados dinamicamente via app.js -->
   </div>
 
