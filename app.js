@@ -703,6 +703,8 @@
       const financingDueDay = (Number.isFinite(parsedDueDay) && parsedDueDay >= 1)
         ? Math.min(31, parsedDueDay)
         : 10;
+      const parsedOffset = parseInt(raw.firstInstallmentOffset, 10);
+      const firstInstallmentOffset = [0, 1, 2].includes(parsedOffset) ? parsedOffset : 1;
 
       const parsedMonthly = Number(raw.monthlyContribution);
       const monthlyContribution = (Number.isFinite(parsedMonthly) && parsedMonthly >= 0)
@@ -720,6 +722,7 @@
         category,
         mode,
         installments,
+        firstInstallmentOffset,
         financingCalcBy,
         interestRate,
         interestRateUnit,
@@ -1135,6 +1138,7 @@
       this.planDownPaymentSourceInput = document.getElementById('planDownPaymentSourceInput');
       this.planDownPaymentSourceBtns = document.querySelectorAll('.plan-entry-source-btn');
       this.planDownPaymentSourceHint = document.getElementById('planDownPaymentSourceHint');
+      this.planFirstInstallmentOffsetSelect = document.getElementById('planFirstInstallmentOffsetSelect');
       this.planEntryPercentBtns = document.querySelectorAll('[data-plan-entry-pct]');
       this.planInstallmentFields = document.getElementById('planInstallmentFields');
       this.planInstallmentsSelect = document.getElementById('planInstallmentsSelect');
@@ -1380,6 +1384,7 @@
         this.planCategorySelect,
         this.planTargetAmountInput,
         this.planSavedAmountInput,
+        this.planFirstInstallmentOffsetSelect,
         this.planInstallmentsSelect,
         this.planPaymentMethodSelect,
         this.planFinancingMonthsInput,
@@ -1475,15 +1480,18 @@
     checkPreviousMonthBills() {
       const currentPeriod = this.state.currentPeriod;
       const currentBills = this.state.bills.filter(b => b.dueDate.startsWith(currentPeriod));
+      const hasRegularCurrentBills = currentBills.some(b => !b.financingPlanId);
 
       const prevPeriod = Utils.shiftPeriod(currentPeriod, -1);
       const prevBills = this.state.bills.filter(b => b.dueDate.startsWith(prevPeriod));
+      const existingFinancingPlanIds = new Set(currentBills.map(b => b.financingPlanId).filter(Boolean));
+      const eligiblePrevBills = prevBills.filter(b => !b.financingPlanId || !existingFinancingPlanIds.has(b.financingPlanId));
 
-      // Se o mês atual não tem contas e o mês anterior tem contas cadastradas
-      if (currentBills.length === 0 && prevBills.length > 0) {
+      // Se o mês atual não tem contas fixas regulares (apenas eventuais financiamentos pré-agendados) e o mês anterior tem contas elegíveis
+      if (!hasRegularCurrentBills && eligiblePrevBills.length > 0) {
         if (this.recurrentBillsBanner) {
           const prevMonthName = Utils.formatPeriod(prevPeriod);
-          this.recurrentBillsBannerText.textContent = `Você tem ${prevBills.length} contas em ${prevMonthName}. Deseja copiá-las com status pendente?`;
+          this.recurrentBillsBannerText.textContent = `Você tem ${eligiblePrevBills.length} contas em ${prevMonthName}. Deseja copiá-las com status pendente?`;
           this.recurrentBillsBanner.classList.remove('hidden');
         }
         if (this.replicateBillsHeaderBtn) {
@@ -1495,8 +1503,8 @@
           this.recurrentBillsBanner.classList.add('hidden');
         }
         if (this.replicateBillsHeaderBtn) {
-          // Exibe botão no cabeçalho se houver contas no mês anterior
-          if (prevBills.length > 0) {
+          // Exibe botão no cabeçalho se houver contas elegíveis no mês anterior
+          if (eligiblePrevBills.length > 0) {
             this.replicateBillsHeaderBtn.classList.remove('hidden');
             this.replicateBillsHeaderBtn.classList.add('inline-flex');
           } else {
@@ -1517,9 +1525,18 @@
         return;
       }
 
+      const currentBills = this.state.bills.filter(b => b.dueDate.startsWith(currentPeriod));
+      const existingFinancingPlanIds = new Set(currentBills.map(b => b.financingPlanId).filter(Boolean));
+      const billsToCopy = prevBills.filter(b => !b.financingPlanId || !existingFinancingPlanIds.has(b.financingPlanId));
+
+      if (billsToCopy.length === 0) {
+        Toast.show('As parcelas de financiamento do mês anterior já estão lançadas neste mês.', 'info');
+        return;
+      }
+
       const confirmed = await ConfirmDialog.open({
         title: 'Replicar Contas Fixas',
-        message: `Deseja copiar ${prevBills.length} contas de ${Utils.formatPeriod(prevPeriod)} para ${Utils.formatPeriod(currentPeriod)}? Elas serão criadas como Pendentes.`,
+        message: `Deseja copiar ${billsToCopy.length} contas de ${Utils.formatPeriod(prevPeriod)} para ${Utils.formatPeriod(currentPeriod)}? Elas serão criadas como Pendentes.`,
         confirmText: 'Copiar Contas',
         variant: 'primary',
         icon: 'fa-copy'
@@ -1529,7 +1546,7 @@
 
       let skippedFinishedFinancing = 0;
       const newBills = [];
-      prevBills.forEach(bill => {
+      billsToCopy.forEach(bill => {
         // Mantém o dia original de vencimento ajustando com segurança para o novo período
         const dayPart = bill.dueDate.split('-')[2] || '10';
         const nextDueDate = Utils.shiftDateToPeriod(`${prevPeriod}-${dayPart}`, currentPeriod) || `${currentPeriod}-${dayPart}`;
@@ -2774,10 +2791,14 @@
         : periodIncomes.reduce((sum, entry) => sum + (entry.amount || 0), 0);
 
       const periodBillsList = this.state.bills.filter(b => (b.dueDate || '').startsWith(period));
-      const usesRecurringBills = isFuture && periodBillsList.length === 0;
-      const refBillsList = usesRecurringBills
-        ? this.state.bills.filter(b => (b.dueDate || '').startsWith(basePeriod))
-        : periodBillsList;
+      const hasScheduledFutureOnly = isFuture && periodBillsList.length > 0 && periodBillsList.every(b => Boolean(b.financingPlanId));
+      const usesRecurringBills = isFuture && (periodBillsList.length === 0 || hasScheduledFutureOnly);
+      let refBillsList = periodBillsList;
+      if (usesRecurringBills) {
+        const scheduledPlanIds = new Set(periodBillsList.map(b => b.financingPlanId).filter(Boolean));
+        const baseRecurring = this.state.bills.filter(b => (b.dueDate || '').startsWith(basePeriod) && (!b.financingPlanId || !scheduledPlanIds.has(b.financingPlanId)));
+        refBillsList = [...baseRecurring, ...periodBillsList];
+      }
       const bills = refBillsList.reduce((sum, b) => sum + (b.amount || 0), 0);
 
       const expenses = this.state.expenses
@@ -3009,15 +3030,70 @@
       };
     },
 
+    getPlanFirstInstallmentOffset(plan) {
+      const parsed = parseInt(plan?.firstInstallmentOffset, 10);
+      return [0, 1, 2].includes(parsed) ? parsed : 1;
+    },
+
+    evaluatePlanCategoryOverflow(category, startPeriod, startPeriodImpact, firstInstallmentPeriod, firstInstallmentImpact) {
+      const startUsage = this.getPlanCategoryUsage(category, startPeriod);
+      const budgetLimit = startUsage.budgetLimit;
+      if (firstInstallmentPeriod === startPeriod) {
+        const combined = Math.round((startPeriodImpact + firstInstallmentImpact) * 100) / 100;
+        const projected = Math.round((startUsage.currentSpent + combined) * 100) / 100;
+        const exceeds = budgetLimit > 0 && projected > budgetLimit;
+        return {
+          categoryBudget: budgetLimit,
+          categorySpentCurrent: startUsage.currentSpent,
+          categoryExceedsBudget: exceeds,
+          categoryOverflowAmount: exceeds ? Math.round((projected - budgetLimit) * 100) / 100 : 0,
+          categoryCheckPeriod: startPeriod
+        };
+      }
+
+      const instUsage = this.getPlanCategoryUsage(category, firstInstallmentPeriod);
+      const instProjected = Math.round((instUsage.currentSpent + firstInstallmentImpact) * 100) / 100;
+      const instExceeds = budgetLimit > 0 && instProjected > budgetLimit;
+      const instOverflow = instExceeds ? Math.round((instProjected - budgetLimit) * 100) / 100 : 0;
+
+      let startExceeds = false;
+      let startOverflow = 0;
+      if (startPeriodImpact > 0) {
+        const startProjected = Math.round((startUsage.currentSpent + startPeriodImpact) * 100) / 100;
+        startExceeds = budgetLimit > 0 && startProjected > budgetLimit;
+        startOverflow = startExceeds ? Math.round((startProjected - budgetLimit) * 100) / 100 : 0;
+      }
+
+      if (startOverflow > instOverflow) {
+        return {
+          categoryBudget: budgetLimit,
+          categorySpentCurrent: startUsage.currentSpent,
+          categoryExceedsBudget: startExceeds,
+          categoryOverflowAmount: startOverflow,
+          categoryCheckPeriod: startPeriod
+        };
+      }
+
+      return {
+        categoryBudget: budgetLimit,
+        categorySpentCurrent: instUsage.currentSpent,
+        categoryExceedsBudget: instExceeds,
+        categoryOverflowAmount: instOverflow,
+        categoryCheckPeriod: firstInstallmentPeriod
+      };
+    },
+
     evaluateInstallmentPlan(plan, metrics) {
       const { startPeriod, currentBase, targetAmount, effectiveEntry, remainingAmount, progressPercent } = metrics;
       const installments = Math.max(1, Math.min(36, parseInt(plan.installments, 10) || 1));
       const downPaymentSource = plan.downPaymentSource === 'month_budget' ? 'month_budget' : 'saved';
       const downPaymentMonthImpact = downPaymentSource === 'month_budget' ? effectiveEntry : 0;
-      const { budgetLimit, currentSpent } = this.getPlanCategoryUsage(plan.category, startPeriod);
+      const firstInstallmentOffset = this.getPlanFirstInstallmentOffset(plan);
+      const firstInstallmentPeriod = Utils.shiftPeriod(startPeriod, firstInstallmentOffset);
 
       if (targetAmount > 0 && remainingAmount === 0 && downPaymentMonthImpact === 0) {
         const currentMonth = { ...currentBase, impact: 0, balanceAfter: currentBase.balanceBefore };
+        const catCheck = this.evaluatePlanCategoryOverflow(plan.category, startPeriod, 0, startPeriod, 0);
         return {
           mode: 'installment',
           status: 'fits',
@@ -3026,6 +3102,9 @@
           savedAmount: metrics.savedAmount,
           downPaymentSource,
           downPaymentMonthImpact: 0,
+          firstInstallmentOffset,
+          firstInstallmentPeriod: startPeriod,
+          firstInstallmentMonth: currentMonth,
           remainingAmount: 0,
           progressPercent: 100,
           installments,
@@ -3039,10 +3118,7 @@
           deficitMonths: [],
           timeline: [currentMonth],
           usesRecurringHorizon: false,
-          categoryBudget: budgetLimit,
-          categorySpentCurrent: currentSpent,
-          categoryExceedsBudget: false,
-          categoryOverflowAmount: 0,
+          ...catCheck,
           recommendation: 'Você já possui 100% do valor separado! Pode efetivar a compra sem comprometer seu orçamento mensal.'
         };
       }
@@ -3053,23 +3129,19 @@
         const incomeSharePercent = currentBase.income > 0
           ? Math.round((downPaymentMonthImpact / currentBase.income) * 100)
           : 100;
-        const projectedCategoryTotal = Math.round((currentSpent + downPaymentMonthImpact) * 100) / 100;
-        const categoryExceedsBudget = budgetLimit > 0 && projectedCategoryTotal > budgetLimit;
-        const categoryOverflowAmount = categoryExceedsBudget
-          ? Math.round((projectedCategoryTotal - budgetLimit) * 100) / 100
-          : 0;
+        const catCheck = this.evaluatePlanCategoryOverflow(plan.category, startPeriod, downPaymentMonthImpact, startPeriod, 0);
 
         let status = 'fits';
         if (currentBase.income <= 0 || balanceAfter < 0) {
           status = 'over';
-        } else if (balanceAfter < (currentBase.income * 0.1) || incomeSharePercent > 25 || categoryExceedsBudget) {
+        } else if (balanceAfter < (currentBase.income * 0.1) || incomeSharePercent > 25 || catCheck.categoryExceedsBudget) {
           status = 'tight';
         }
 
         const recommendation = status === 'over'
           ? `Pagar a entrada integral de ${Utils.formatCurrency(downPaymentMonthImpact)} com o saldo deste mês deixaria ${Utils.formatPeriod(startPeriod)} no vermelho (${Utils.formatCurrency(balanceAfter)}). Considere parcelar ou usar uma Caixinha.`
-          : (categoryExceedsBudget
-            ? `Cabe no saldo geral, mas ultrapassa em ${Utils.formatCurrency(categoryOverflowAmount)} o teto mensal da categoria ${plan.category}.`
+          : (catCheck.categoryExceedsBudget
+            ? `Cabe no saldo geral, mas ultrapassa em ${Utils.formatCurrency(catCheck.categoryOverflowAmount)} o teto mensal da categoria ${plan.category}.`
             : `Pagamento à vista com recursos deste mês! Sobrará ${Utils.formatCurrency(balanceAfter)} livre em ${Utils.formatPeriod(startPeriod)}.`);
 
         return {
@@ -3080,6 +3152,9 @@
           savedAmount: metrics.savedAmount,
           downPaymentSource,
           downPaymentMonthImpact,
+          firstInstallmentOffset,
+          firstInstallmentPeriod: startPeriod,
+          firstInstallmentMonth: currentMonth,
           remainingAmount: 0,
           progressPercent: 100,
           installments: 1,
@@ -3093,47 +3168,72 @@
           deficitMonths: balanceAfter < 0 ? [currentMonth] : [],
           timeline: [currentMonth],
           usesRecurringHorizon: false,
-          categoryBudget: budgetLimit,
-          categorySpentCurrent: currentSpent,
-          categoryExceedsBudget,
-          categoryOverflowAmount,
+          ...catCheck,
           recommendation
         };
       }
 
       const { baseAmount, firstAmount } = this.computeInstallmentBreakdown(remainingAmount, installments);
+      const currentMonthBalanceAfter = Math.round((currentBase.balanceBefore - downPaymentMonthImpact) * 100) / 100;
       const timeline = [];
+      let currentMonth = null;
+
+      if (firstInstallmentOffset > 0 && downPaymentMonthImpact > 0) {
+        currentMonth = {
+          ...currentBase,
+          impact: downPaymentMonthImpact,
+          balanceAfter: currentMonthBalanceAfter,
+          isDownPaymentOnly: true
+        };
+        timeline.push(currentMonth);
+      }
+
+      const firstInstallmentIndexInTimeline = timeline.length;
       for (let i = 0; i < installments; i++) {
-        const period = Utils.shiftPeriod(startPeriod, i);
+        const period = Utils.shiftPeriod(firstInstallmentPeriod, i);
         const base = this.getMonthBaseline(period);
         const impact = i === 0
-          ? Math.round((firstAmount + downPaymentMonthImpact) * 100) / 100
+          ? (firstInstallmentOffset === 0 ? Math.round((firstAmount + downPaymentMonthImpact) * 100) / 100 : firstAmount)
           : baseAmount;
         const balanceAfter = Math.round((base.balanceBefore - impact) * 100) / 100;
         timeline.push({ ...base, impact, balanceAfter });
       }
 
-      const currentMonth = timeline[0];
+      const firstInstallmentMonth = timeline[firstInstallmentIndexInTimeline];
+      if (!currentMonth) {
+        currentMonth = firstInstallmentOffset === 0
+          ? firstInstallmentMonth
+          : { ...currentBase, impact: 0, balanceAfter: currentBase.balanceBefore };
+      }
+
       const worstMonth = timeline.reduce((worst, m) => (m.balanceAfter < worst.balanceAfter ? m : worst), timeline[0]);
       const deficitMonths = timeline.filter(m => m.balanceAfter < 0);
       const monthlyImpact = installments === 1
-        ? Math.round((firstAmount + downPaymentMonthImpact) * 100) / 100
+        ? (firstInstallmentOffset === 0 ? Math.round((firstAmount + downPaymentMonthImpact) * 100) / 100 : firstAmount)
         : baseAmount;
-      const firstInstallmentImpact = Math.round((firstAmount + downPaymentMonthImpact) * 100) / 100;
-      const incomeSharePercent = currentBase.income > 0
-        ? Math.round((monthlyImpact / currentBase.income) * 100)
+      const firstInstallmentImpact = firstInstallmentOffset === 0
+        ? Math.round((firstAmount + downPaymentMonthImpact) * 100) / 100
+        : firstAmount;
+
+      const refIncome = downPaymentMonthImpact > 0
+        ? currentBase.income
+        : (firstInstallmentMonth.income || currentBase.income);
+      const incomeSharePercent = refIncome > 0
+        ? Math.round((monthlyImpact / refIncome) * 100)
         : (monthlyImpact > 0 ? 100 : 0);
 
-      const projectedCategoryTotal = Math.round((currentSpent + firstInstallmentImpact) * 100) / 100;
-      const categoryExceedsBudget = budgetLimit > 0 && projectedCategoryTotal > budgetLimit;
-      const categoryOverflowAmount = categoryExceedsBudget
-        ? Math.round((projectedCategoryTotal - budgetLimit) * 100) / 100
-        : 0;
+      const catCheck = this.evaluatePlanCategoryOverflow(
+        plan.category,
+        startPeriod,
+        downPaymentMonthImpact,
+        firstInstallmentPeriod,
+        firstAmount
+      );
 
       let status = 'fits';
-      if (currentBase.income <= 0 || deficitMonths.length > 0) {
+      if (refIncome <= 0 || deficitMonths.length > 0) {
         status = 'over';
-      } else if (worstMonth.balanceAfter < (currentBase.income * 0.1) || incomeSharePercent > 25 || categoryExceedsBudget) {
+      } else if (worstMonth.balanceAfter < (refIncome * 0.1) || incomeSharePercent > 25 || catCheck.categoryExceedsBudget) {
         status = 'tight';
       }
 
@@ -3150,21 +3250,26 @@
           const altOptions = [2, 3, 4, 5, 6, 8, 10, 12, 15, 18, 24, 36].filter(n => n > installments);
           let foundAlt = null;
 
-          for (const k of altOptions) {
-            const { baseAmount: altBase, firstAmount: altFirst } = this.computeInstallmentBreakdown(remainingAmount, k);
-            let allNonNegative = true;
-            for (let j = 0; j < k; j++) {
-              const p = Utils.shiftPeriod(startPeriod, j);
-              const b = this.getMonthBaseline(p);
-              const imp = j === 0 ? (altFirst + downPaymentMonthImpact) : altBase;
-              if ((b.balanceBefore - imp) < 0) {
-                allNonNegative = false;
+          const currentMonthSupportsEntry = firstInstallmentOffset === 0 || downPaymentMonthImpact === 0 || currentMonth.balanceAfter >= 0;
+          if (currentMonthSupportsEntry && refIncome > 0) {
+            for (const k of altOptions) {
+              const { baseAmount: altBase, firstAmount: altFirst } = this.computeInstallmentBreakdown(remainingAmount, k);
+              let allNonNegative = true;
+              for (let j = 0; j < k; j++) {
+                const p = Utils.shiftPeriod(firstInstallmentPeriod, j);
+                const b = this.getMonthBaseline(p);
+                const imp = j === 0
+                  ? (firstInstallmentOffset === 0 ? (altFirst + downPaymentMonthImpact) : altFirst)
+                  : altBase;
+                if ((b.balanceBefore - imp) < 0) {
+                  allNonNegative = false;
+                  break;
+                }
+              }
+              if (allNonNegative) {
+                foundAlt = { count: k, perMonth: altBase };
                 break;
               }
-            }
-            if (allNonNegative && currentBase.income > 0) {
-              foundAlt = { count: k, perMonth: altBase };
-              break;
             }
           }
 
@@ -3179,13 +3284,16 @@
           }
         }
       } else if (status === 'tight') {
-        if (categoryExceedsBudget) {
-          recommendation = `As parcelas cabem no saldo geral, mas o impacto inicial ultrapassa em ${Utils.formatCurrency(categoryOverflowAmount)} o teto mensal da categoria ${plan.category}.`;
+        if (catCheck.categoryExceedsBudget) {
+          recommendation = `As parcelas cabem no saldo geral, mas o impacto inicial em ${Utils.formatPeriod(catCheck.categoryCheckPeriod)} ultrapassa em ${Utils.formatCurrency(catCheck.categoryOverflowAmount)} o teto mensal da categoria ${plan.category}.`;
         } else {
           recommendation = `Cabe no orçamento, mas a sobra em ${Utils.formatPeriod(worstMonth.period)} ficará apertada (${Utils.formatCurrency(worstMonth.balanceAfter)}). Considere aumentar a entrada ou parcelar em mais vezes.`;
         }
       } else {
-        recommendation = `Compra saudável! Mesmo no mês de maior comprometimento (${Utils.formatPeriod(worstMonth.period)}), restará ${Utils.formatCurrency(worstMonth.balanceAfter)} livre.`;
+        const startHint = firstInstallmentOffset > 0
+          ? ` (1ª parcela em ${Utils.formatPeriod(firstInstallmentPeriod)})`
+          : '';
+        recommendation = `Compra saudável!${startHint} Mesmo no mês de maior comprometimento (${Utils.formatPeriod(worstMonth.period)}), restará ${Utils.formatCurrency(worstMonth.balanceAfter)} livre.`;
       }
 
       return {
@@ -3196,6 +3304,9 @@
         savedAmount: metrics.savedAmount,
         downPaymentSource,
         downPaymentMonthImpact,
+        firstInstallmentOffset,
+        firstInstallmentPeriod,
+        firstInstallmentMonth,
         remainingAmount,
         progressPercent,
         installments,
@@ -3203,16 +3314,13 @@
         firstInstallmentImpact,
         incomeSharePercent,
         monthsNeeded: installments,
-        targetCompletionPeriod: Utils.shiftPeriod(startPeriod, installments - 1),
+        targetCompletionPeriod: Utils.shiftPeriod(firstInstallmentPeriod, installments - 1),
         currentMonth,
         worstMonth,
         deficitMonths,
         timeline,
         usesRecurringHorizon: timeline.some(m => m.usesRecurringBase),
-        categoryBudget: budgetLimit,
-        categorySpentCurrent: currentSpent,
-        categoryExceedsBudget,
-        categoryOverflowAmount,
+        ...catCheck,
         recommendation
       };
     },
@@ -3225,7 +3333,8 @@
       const calcBy = plan.financingCalcBy === 'installment' ? 'installment' : 'rate';
       const interestRateUnit = plan.interestRateUnit === 'annual' ? 'annual' : 'monthly';
       const amortizationType = plan.amortizationType === 'sac' ? 'sac' : 'price';
-      const { budgetLimit, currentSpent } = this.getPlanCategoryUsage(plan.category, startPeriod);
+      const firstInstallmentOffset = this.getPlanFirstInstallmentOffset(plan);
+      const firstInstallmentPeriod = Utils.shiftPeriod(startPeriod, firstInstallmentOffset);
 
       if (targetAmount > 0 && remainingAmount === 0) {
         const balanceAfter = Math.round((currentBase.balanceBefore - downPaymentMonthImpact) * 100) / 100;
@@ -3233,16 +3342,12 @@
         const incomeSharePercent = currentBase.income > 0 && downPaymentMonthImpact > 0
           ? Math.round((downPaymentMonthImpact / currentBase.income) * 100)
           : 0;
-        const projectedCategoryTotal = Math.round((currentSpent + downPaymentMonthImpact) * 100) / 100;
-        const categoryExceedsBudget = budgetLimit > 0 && projectedCategoryTotal > budgetLimit;
-        const categoryOverflowAmount = categoryExceedsBudget
-          ? Math.round((projectedCategoryTotal - budgetLimit) * 100) / 100
-          : 0;
+        const catCheck = this.evaluatePlanCategoryOverflow(plan.category, startPeriod, downPaymentMonthImpact, startPeriod, 0);
 
         let status = 'fits';
         if (downPaymentMonthImpact > 0) {
           if (currentBase.income <= 0 || balanceAfter < 0) status = 'over';
-          else if (balanceAfter < (currentBase.income * 0.1) || incomeSharePercent > 25 || categoryExceedsBudget) status = 'tight';
+          else if (balanceAfter < (currentBase.income * 0.1) || incomeSharePercent > 25 || catCheck.categoryExceedsBudget) status = 'tight';
         }
 
         const recommendation = downPaymentMonthImpact === 0
@@ -3261,6 +3366,9 @@
           savedAmount: metrics.savedAmount,
           downPaymentSource,
           downPaymentMonthImpact,
+          firstInstallmentOffset,
+          firstInstallmentPeriod: startPeriod,
+          firstInstallmentMonth: currentMonth,
           remainingAmount: 0,
           financedAmount: 0,
           progressPercent: 100,
@@ -3283,10 +3391,7 @@
           deficitMonths: balanceAfter < 0 ? [currentMonth] : [],
           timeline: [currentMonth],
           usesRecurringHorizon: false,
-          categoryBudget: budgetLimit,
-          categorySpentCurrent: currentSpent,
-          categoryExceedsBudget,
-          categoryOverflowAmount,
+          ...catCheck,
           recommendation
         };
       }
@@ -3305,6 +3410,7 @@
         const balanceAfter = Math.round((currentBase.balanceBefore - downPaymentMonthImpact) * 100) / 100;
         const currentMonth = { ...currentBase, impact: downPaymentMonthImpact, balanceAfter };
         const status = currentBase.balanceBefore > 0 ? 'tight' : 'over';
+        const catCheck = this.evaluatePlanCategoryOverflow(plan.category, startPeriod, downPaymentMonthImpact, firstInstallmentPeriod, 0);
         return {
           mode: 'financing',
           calcBy,
@@ -3315,6 +3421,9 @@
           savedAmount: metrics.savedAmount,
           downPaymentSource,
           downPaymentMonthImpact,
+          firstInstallmentOffset,
+          firstInstallmentPeriod,
+          firstInstallmentMonth: currentMonth,
           remainingAmount,
           financedAmount: remainingAmount,
           progressPercent,
@@ -3331,16 +3440,13 @@
           effectiveAnnualRatePct: 0,
           incomeSharePercent: 0,
           monthsNeeded: installments,
-          targetCompletionPeriod: Utils.shiftPeriod(startPeriod, installments - 1),
+          targetCompletionPeriod: Utils.shiftPeriod(firstInstallmentPeriod, installments - 1),
           currentMonth,
           worstMonth: currentMonth,
           deficitMonths: balanceAfter < 0 ? [currentMonth] : [],
           timeline: [currentMonth],
           usesRecurringHorizon: false,
-          categoryBudget: budgetLimit,
-          categorySpentCurrent: currentSpent,
-          categoryExceedsBudget: false,
-          categoryOverflowAmount: 0,
+          ...catCheck,
           recommendation: 'Informe o valor da parcela proposta pelo banco ou loja para calcular juros, taxa implícita e impacto mensal.'
         };
       }
@@ -3366,13 +3472,28 @@
       const genericBase = this.getGenericFutureBaseline(startPeriod);
 
       const timelinePreview = [];
+      let currentMonth = null;
       let worstMonth = null;
       const deficitMonths = [];
       let usesRecurringHorizon = false;
 
+      if (firstInstallmentOffset > 0 && downPaymentMonthImpact > 0) {
+        const entryBalanceAfter = Math.round((currentBase.balanceBefore - downPaymentMonthImpact) * 100) / 100;
+        currentMonth = {
+          ...currentBase,
+          impact: downPaymentMonthImpact,
+          balanceAfter: entryBalanceAfter,
+          isDownPaymentOnly: true
+        };
+        timelinePreview.push(currentMonth);
+        worstMonth = currentMonth;
+        if (currentMonth.balanceAfter < 0) deficitMonths.push(currentMonth);
+      }
+
+      const firstInstallmentPreviewIndex = timelinePreview.length;
       for (let i = 0; i < installments; i++) {
-        const period = Utils.shiftPeriod(startPeriod, i);
-        const base = (i < 12 || specialPeriods.has(period))
+        const period = Utils.shiftPeriod(firstInstallmentPeriod, i);
+        const base = ((firstInstallmentOffset + i) < 12 || specialPeriods.has(period))
           ? this.getMonthBaseline(period)
           : { ...genericBase, period };
 
@@ -3380,7 +3501,7 @@
 
         const installmentVal = schedule[i] ?? monthlyImpact;
         const impact = i === 0
-          ? Math.round((installmentVal + downPaymentMonthImpact) * 100) / 100
+          ? (firstInstallmentOffset === 0 ? Math.round((installmentVal + downPaymentMonthImpact) * 100) / 100 : installmentVal)
           : installmentVal;
         const balanceAfter = Math.round((base.balanceBefore - impact) * 100) / 100;
         const point = { ...base, impact, balanceAfter };
@@ -3390,22 +3511,35 @@
         if (point.balanceAfter < 0) deficitMonths.push(point);
       }
 
-      const currentMonth = timelinePreview[0];
-      const firstInstallmentImpact = currentMonth.impact;
-      const incomeSharePercent = currentBase.income > 0
-        ? Math.round((monthlyImpact / currentBase.income) * 100)
+      const firstInstallmentMonth = timelinePreview[firstInstallmentPreviewIndex];
+      if (!currentMonth) {
+        currentMonth = firstInstallmentOffset === 0
+          ? firstInstallmentMonth
+          : { ...currentBase, impact: 0, balanceAfter: currentBase.balanceBefore };
+      }
+
+      const firstInstallmentImpact = firstInstallmentOffset === 0
+        ? Math.round(((schedule[0] ?? monthlyImpact) + downPaymentMonthImpact) * 100) / 100
+        : (schedule[0] ?? monthlyImpact);
+      const refIncome = downPaymentMonthImpact > 0
+        ? currentBase.income
+        : (firstInstallmentMonth.income || currentBase.income);
+      const incomeSharePercent = refIncome > 0
+        ? Math.round((monthlyImpact / refIncome) * 100)
         : (monthlyImpact > 0 ? 100 : 0);
 
-      const projectedCategoryTotal = Math.round((currentSpent + firstInstallmentImpact) * 100) / 100;
-      const categoryExceedsBudget = budgetLimit > 0 && projectedCategoryTotal > budgetLimit;
-      const categoryOverflowAmount = categoryExceedsBudget
-        ? Math.round((projectedCategoryTotal - budgetLimit) * 100) / 100
-        : 0;
+      const catCheck = this.evaluatePlanCategoryOverflow(
+        plan.category,
+        startPeriod,
+        downPaymentMonthImpact,
+        firstInstallmentPeriod,
+        schedule[0] ?? monthlyImpact
+      );
 
       let status = 'fits';
-      if (currentBase.income <= 0 || deficitMonths.length > 0) {
+      if (refIncome <= 0 || deficitMonths.length > 0) {
         status = 'over';
-      } else if (worstMonth.balanceAfter < (currentBase.income * 0.1) || incomeSharePercent > 25 || categoryExceedsBudget) {
+      } else if (worstMonth.balanceAfter < (refIncome * 0.1) || incomeSharePercent > 25 || catCheck.categoryExceedsBudget) {
         status = 'tight';
       }
 
@@ -3420,7 +3554,7 @@
 
         if (entryOnlyIssue) {
           recommendation = `A parcela de ${Utils.formatCurrency(monthlyImpact)}/mês cabe nos meses seguintes, mas pagar a entrada de ${Utils.formatCurrency(downPaymentMonthImpact)} com o saldo deste mês deixaria ${Utils.formatPeriod(startPeriod)} negativo. Use uma Caixinha ou junte a entrada antes.`;
-        } else if (calcBy === 'rate' && currentBase.income > 0) {
+        } else if (calcBy === 'rate' && refIncome > 0 && (firstInstallmentOffset === 0 || downPaymentMonthImpact === 0 || currentMonth.balanceAfter >= 0)) {
           const altTerms = [12, 18, 24, 36, 48, 60, 72, 84, 96, 120, 180, 240, 360].filter(n => n > installments);
           let foundAlt = null;
 
@@ -3436,12 +3570,13 @@
 
             let allNonNegative = true;
             for (let j = 0; j < k; j++) {
-              const p = Utils.shiftPeriod(startPeriod, j);
-              const b = (j < 12 || specialPeriods.has(p))
+              const p = Utils.shiftPeriod(firstInstallmentPeriod, j);
+              const b = ((firstInstallmentOffset + j) < 12 || specialPeriods.has(p))
                 ? this.getMonthBaseline(p)
                 : genericBase;
+              const altFirst = altSched.schedule[0] ?? altSched.monthlyImpact;
               const imp = j === 0
-                ? ((altSched.schedule[0] ?? altSched.monthlyImpact) + downPaymentMonthImpact)
+                ? (firstInstallmentOffset === 0 ? (altFirst + downPaymentMonthImpact) : altFirst)
                 : (altSched.schedule[j] ?? altSched.monthlyImpact);
               if ((b.balanceBefore - imp) < 0) {
                 allNonNegative = false;
@@ -3461,13 +3596,13 @@
             recommendation = `A parcela de ${Utils.formatCurrency(monthlyImpact)}/mês deixa ${Utils.formatPeriod(worstMonth.period)} negativo (${Utils.formatCurrency(worstMonth.balanceAfter)}). Aumente o valor de entrada ou busque juros menores.`;
           }
         } else {
-          recommendation = currentBase.income <= 0
+          recommendation = refIncome <= 0
             ? 'Cadastre a renda mensal para avaliar se a parcela do financiamento cabe no orçamento.'
             : `A parcela de ${Utils.formatCurrency(monthlyImpact)}/mês deixa ${Utils.formatPeriod(worstMonth.period)} no vermelho (${Utils.formatCurrency(worstMonth.balanceAfter)}). Negocie prazo maior ou aumente a entrada.`;
         }
       } else if (status === 'tight') {
-        if (categoryExceedsBudget) {
-          recommendation = `A parcela cabe no saldo geral, mas o impacto inicial ultrapassa em ${Utils.formatCurrency(categoryOverflowAmount)} o teto mensal da categoria ${plan.category}.`;
+        if (catCheck.categoryExceedsBudget) {
+          recommendation = `A parcela cabe no saldo geral, mas o impacto inicial em ${Utils.formatPeriod(catCheck.categoryCheckPeriod)} ultrapassa em ${Utils.formatCurrency(catCheck.categoryOverflowAmount)} o teto mensal da categoria ${plan.category}.`;
         } else {
           recommendation = `Financiamento apertado: restará ${Utils.formatCurrency(worstMonth.balanceAfter)} livre em ${Utils.formatPeriod(worstMonth.period)} (${incomeSharePercent}% da renda comprometida). Aumentar a entrada aliviaria o mês e reduziria ${Utils.formatCurrency(totalInterest)} de juros.`;
         }
@@ -3475,7 +3610,10 @@
         const interestInsight = totalInterest > 0
           ? `Você pagará +${Utils.formatCurrency(totalInterest)} em juros (${interestOverPrincipalPercent}% sobre o valor financiado).`
           : 'Financiamento simulado com taxa zero de juros.';
-        recommendation = `Financiamento viável! Menor sobra prevista: ${Utils.formatCurrency(worstMonth.balanceAfter)} (${Utils.formatPeriod(worstMonth.period)}).${interestInsight ? ` ${interestInsight}` : ''}`;
+        const startHint = firstInstallmentOffset > 0
+          ? ` (1ª parcela em ${Utils.formatPeriod(firstInstallmentPeriod)})`
+          : '';
+        recommendation = `Financiamento viável!${startHint} Menor sobra prevista: ${Utils.formatCurrency(worstMonth.balanceAfter)} (${Utils.formatPeriod(worstMonth.period)}).${interestInsight ? ` ${interestInsight}` : ''}`;
       }
 
       return {
@@ -3488,6 +3626,9 @@
         savedAmount: metrics.savedAmount,
         downPaymentSource,
         downPaymentMonthImpact,
+        firstInstallmentOffset,
+        firstInstallmentPeriod,
+        firstInstallmentMonth,
         remainingAmount,
         financedAmount: remainingAmount,
         progressPercent,
@@ -3505,16 +3646,13 @@
         effectiveAnnualRatePct: annualRatePct,
         incomeSharePercent,
         monthsNeeded: installments,
-        targetCompletionPeriod: Utils.shiftPeriod(startPeriod, installments - 1),
+        targetCompletionPeriod: Utils.shiftPeriod(firstInstallmentPeriod, installments - 1),
         currentMonth,
         worstMonth,
         deficitMonths,
         timeline: timelinePreview,
         usesRecurringHorizon,
-        categoryBudget: budgetLimit,
-        categorySpentCurrent: currentSpent,
-        categoryExceedsBudget,
-        categoryOverflowAmount,
+        ...catCheck,
         recommendation
       };
     },
@@ -3737,11 +3875,17 @@
               ? 'Coberto pela entrada'
               : (evaluation.monthlyImpact > 0 ? `Financ. ${evaluation.installments}x ${Utils.formatCurrency(evaluation.monthlyImpact)}` : `${evaluation.installments}x (defina parcela)`);
             subline = `<span>Bem: <strong class="text-slate-200">${Utils.formatCurrency(plan.targetAmount)}</strong></span><span class="font-medium text-indigo-300">${condLabel}</span>`;
+            if (evaluation.remainingAmount > 0 && evaluation.firstInstallmentPeriod) {
+              progressHtml = `<div class="text-[10px] text-slate-400">1ª parcela: <strong class="text-slate-300">${this.formatCompactPeriod(evaluation.firstInstallmentPeriod)}</strong>${evaluation.downPaymentMonthImpact > 0 ? ' • Entrada neste mês' : ''}</div>`;
+            }
           } else {
             const condLabel = evaluation.remainingAmount === 0
               ? (evaluation.downPaymentMonthImpact > 0 ? `À vista (mês): ${Utils.formatCurrency(evaluation.downPaymentMonthImpact)}` : 'Coberto pela reserva')
               : (plan.installments > 1 ? `${plan.installments}x de ${Utils.formatCurrency(evaluation.monthlyImpact)}` : `À vista: ${Utils.formatCurrency(evaluation.monthlyImpact)}`);
             subline = `<span>Alvo: <strong class="text-slate-200">${Utils.formatCurrency(plan.targetAmount)}</strong></span><span class="font-medium text-slate-300">${condLabel}</span>`;
+            if (evaluation.remainingAmount > 0 && evaluation.firstInstallmentPeriod) {
+              progressHtml = `<div class="text-[10px] text-slate-400">1ª parcela: <strong class="text-slate-300">${this.formatCompactPeriod(evaluation.firstInstallmentPeriod)}</strong>${evaluation.downPaymentMonthImpact > 0 ? ' • Entrada neste mês' : ''}</div>`;
+            }
           }
 
           html += `
@@ -3876,6 +4020,7 @@
       if (this.planAmortizationSelect) this.planAmortizationSelect.value = 'price';
       if (this.planFinancingInstallmentInput) this.planFinancingInstallmentInput.value = '0,00';
       if (this.planMonthlyContributionInput) this.planMonthlyContributionInput.value = '0,00';
+      if (this.planFirstInstallmentOffsetSelect) this.planFirstInstallmentOffsetSelect.value = '1';
       this.setPlanDownPaymentSource('saved', false);
       this.setPlanFinancingCalcBy('rate', false);
       this.setPlanMode('installment', false);
@@ -3932,6 +4077,9 @@
       }
       if (this.planMonthlyContributionInput) {
         this.planMonthlyContributionInput.value = Utils.formatNumberToInput(plan.monthlyContribution || 0);
+      }
+      if (this.planFirstInstallmentOffsetSelect) {
+        this.planFirstInstallmentOffsetSelect.value = String(this.getPlanFirstInstallmentOffset(plan));
       }
 
       this.setPlanDownPaymentSource(plan.downPaymentSource || 'saved', false);
@@ -4085,6 +4233,7 @@
         targetAmount: Utils.parseCurrency(this.planTargetAmountInput?.value || '0'),
         savedAmount: Utils.parseCurrency(this.planSavedAmountInput?.value || '0'),
         downPaymentSource: this.planDownPaymentSourceInput?.value === 'month_budget' ? 'month_budget' : 'saved',
+        firstInstallmentOffset: this.getPlanFirstInstallmentOffset({ firstInstallmentOffset: this.planFirstInstallmentOffsetSelect?.value }),
         installments,
         paymentMethod: this.planPaymentMethodSelect?.value || 'Cartão de Crédito',
         financingCalcBy: this.planFinancingCalcByInput?.value === 'installment' ? 'installment' : 'rate',
@@ -4219,14 +4368,37 @@
         </div>
       ` : '';
 
-      const entryImpactSubline = (ev.downPaymentMonthImpact > 0)
-        ? `<span class="block text-[10px] text-amber-300/90">Inclui entrada de ${Utils.formatCurrency(ev.downPaymentMonthImpact)} no mês 1</span>`
-        : `<span class="block text-[10px] text-slate-500">Antes: ${Utils.formatCurrency(currentBase.balanceBefore)}</span>`;
+      const hasDeferredStart = ev.mode !== 'save' && ev.remainingAmount > 0 && (ev.firstInstallmentOffset || 0) > 0;
+      const startBadgeHtml = hasDeferredStart
+        ? `<span class="text-[11px] font-medium text-indigo-300/90 ml-1.5">• 1ª parc. ${this.formatCompactPeriod(ev.firstInstallmentPeriod)}</span>`
+        : '';
+
+      let secondMetricLabel = 'Saldo do mês após';
+      let secondMetricValue = balanceAfterCurrent;
+      let entryImpactSubline = `<span class="block text-[10px] text-slate-500">Antes: ${Utils.formatCurrency(currentBase.balanceBefore)}</span>`;
+
+      if (hasDeferredStart && ev.downPaymentMonthImpact > 0) {
+        secondMetricLabel = `Saldo ${this.formatCompactPeriod(this.state.currentPeriod)} (entrada)`;
+        secondMetricValue = balanceAfterCurrent;
+        entryImpactSubline = `<span class="block text-[10px] text-amber-300/90">Entrada agora • 1ª parc. em ${this.formatCompactPeriod(ev.firstInstallmentPeriod)}</span>`;
+      } else if (hasDeferredStart) {
+        const refFirst = ev.firstInstallmentMonth || ev.currentMonth;
+        secondMetricLabel = `Saldo ${this.formatCompactPeriod(ev.firstInstallmentPeriod)} (1ª parc.)`;
+        secondMetricValue = refFirst.balanceAfter;
+        entryImpactSubline = `<span class="block text-[10px] text-slate-400">Antes: ${Utils.formatCurrency(refFirst.balanceBefore)} • ${this.formatCompactPeriod(this.state.currentPeriod)} livre</span>`;
+      } else if (ev.downPaymentMonthImpact > 0) {
+        entryImpactSubline = `<span class="block text-[10px] text-amber-300/90">Inclui entrada de ${Utils.formatCurrency(ev.downPaymentMonthImpact)} no mês 1</span>`;
+      }
+
+      const secondMetricClass = secondMetricValue >= 0 ? 'text-emerald-300' : 'text-rose-300';
+      const checkPeriodLabel = (!ev.categoryCheckPeriod || ev.categoryCheckPeriod === this.state.currentPeriod)
+        ? 'neste mês'
+        : `em ${this.formatCompactPeriod(ev.categoryCheckPeriod)}`;
 
       const categoryWarningHtml = ev.categoryExceedsBudget ? `
         <div class="p-2 rounded-lg bg-amber-500/10 border border-amber-500/25 text-amber-200 text-[11px] flex items-start gap-2">
           <i class="fa-solid fa-bullseye mt-0.5 flex-shrink-0 text-amber-400"></i>
-          <span>Teto da categoria <strong>${Utils.escapeHTML(draft.category)}</strong> (${Utils.formatCurrency(ev.categoryBudget)}): seria ultrapassado em <strong>${Utils.formatCurrency(ev.categoryOverflowAmount)}</strong> neste mês.</span>
+          <span>Teto da categoria <strong>${Utils.escapeHTML(draft.category)}</strong> (${Utils.formatCurrency(ev.categoryBudget)}): seria ultrapassado em <strong>${Utils.formatCurrency(ev.categoryOverflowAmount)}</strong> ${checkPeriodLabel}.</span>
         </div>
       ` : '';
 
@@ -4234,14 +4406,15 @@
       const timelineChipsHtml = timelineSlice.length > 1 ? `
         <div class="pt-1 space-y-1">
           <div class="flex items-center justify-between text-[10px] text-slate-400 uppercase tracking-wider font-semibold">
-            <span>Projeção de saldo pós-compromisso${ev.installments > 6 ? ` (primeiros 6 de ${ev.installments} meses)` : ''}</span>
+            <span>Projeção de saldo pós-compromisso${ev.timeline.length > 6 ? ` (primeiros ${timelineSlice.length} meses)` : ''}</span>
           </div>
           <div class="flex flex-wrap gap-1.5">
             ${timelineSlice.map(m => {
               const chipColor = m.balanceAfter >= 0
                 ? 'bg-slate-900/90 border-slate-700 text-slate-200'
                 : 'bg-rose-500/15 border-rose-500/40 text-rose-200';
-              return `<span class="px-2 py-0.5 rounded-md border text-[10px] font-medium ${chipColor}">${this.formatCompactPeriod(m.period)}: <strong>${Utils.formatCurrency(m.balanceAfter)}</strong></span>`;
+              const chipTag = m.isDownPaymentOnly ? ' <span class="text-[9px] text-amber-300">(entrada)</span>' : '';
+              return `<span class="px-2 py-0.5 rounded-md border text-[10px] font-medium ${chipColor}">${this.formatCompactPeriod(m.period)}${chipTag}: <strong>${Utils.formatCurrency(m.balanceAfter)}</strong></span>`;
             }).join('')}
           </div>
         </div>
@@ -4256,9 +4429,9 @@
       this.planSimulationPreview.innerHTML = `
         <div class="space-y-2.5">
           <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-800">
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 flex-wrap">
               <i class="fa-solid ${meta.icon} ${meta.textClass}"></i>
-              <span class="font-bold text-slate-100">${headlineValue}</span>
+              <span class="font-bold text-slate-100">${headlineValue}</span>${startBadgeHtml}
             </div>
             <span class="status-pill ${meta.pillClass} text-[10px]">${meta.label}</span>
           </div>
@@ -4270,8 +4443,8 @@
               <span class="text-[10px] text-slate-400 ml-1">(${ev.incomeSharePercent}% renda)</span>
             </div>
             <div class="p-2 rounded-lg bg-slate-900/80 border border-slate-800">
-              <span class="block text-[10px] text-slate-400">Saldo do mês após</span>
-              <span class="font-bold ${afterClass}">${Utils.formatCurrency(balanceAfterCurrent)}</span>
+              <span class="block text-[10px] text-slate-400">${secondMetricLabel}</span>
+              <span class="font-bold ${secondMetricClass}">${Utils.formatCurrency(secondMetricValue)}</span>
               ${entryImpactSubline}
             </div>
             <div class="p-2 rounded-lg bg-slate-900/80 border border-slate-800">
@@ -4330,9 +4503,12 @@
             ? `Financ. (${plan.installments}x)`
             : (plan.installments > 1 ? `Parcelado (${plan.installments}x)` : 'À vista (1x)'));
 
+        const firstInstBadge = (!isCompleted && plan.mode !== 'save' && ev.remainingAmount > 0 && ev.firstInstallmentPeriod)
+          ? ` • 1ª parc: ${this.formatCompactPeriod(ev.firstInstallmentPeriod)}`
+          : '';
         const subtitleLine = plan.mode === 'financing'
-          ? `${Utils.escapeHTML(plan.category)} • Conta Fixa (dia ${plan.financingDueDay || 10})`
-          : `${Utils.escapeHTML(plan.category)} • ${Utils.escapeHTML(plan.paymentMethod)}`;
+          ? `${Utils.escapeHTML(plan.category)} • Conta Fixa (dia ${plan.financingDueDay || 10})${firstInstBadge}`
+          : `${Utils.escapeHTML(plan.category)} • ${Utils.escapeHTML(plan.paymentMethod)}${firstInstBadge}`;
 
         let detailLine = '';
         let progressLine = '';
@@ -4533,29 +4709,33 @@
       }
 
       const currentPeriod = this.state.currentPeriod;
+      const firstInstallmentOffset = this.getPlanFirstInstallmentOffset(plan);
+      const firstInstallmentPeriod = Utils.shiftPeriod(currentPeriod, firstInstallmentOffset);
       const dueDay = Math.max(1, Math.min(31, parseInt(plan.financingDueDay, 10) || 10));
-      const dueDate = Utils.shiftDateToPeriod(`${currentPeriod}-${String(dueDay).padStart(2, '0')}`, currentPeriod) || `${currentPeriod}-10`;
+      const dueDate = Utils.shiftDateToPeriod(`${firstInstallmentPeriod}-${String(dueDay).padStart(2, '0')}`, firstInstallmentPeriod) || `${firstInstallmentPeriod}-10`;
 
       let confirmMsg = '';
       if (plan.mode === 'financing') {
         if (remainingAmount > 0) {
           const billTitlePreview = `${plan.title} (Financ. 1/${ev.installments})`;
+          const dueMonthNote = firstInstallmentOffset > 0 ? ` — ${Utils.formatPeriod(firstInstallmentPeriod)}` : '';
           const entryNote = downPaymentMonthImpact > 0
-            ? ` Também será lançado o valor de ${Utils.formatCurrency(downPaymentMonthImpact)} referente à Entrada em Gastos Diários (Pix).`
+            ? ` Também será lançado agora em ${Utils.formatPeriod(currentPeriod)} o valor de ${Utils.formatCurrency(downPaymentMonthImpact)} referente à Entrada em Gastos Diários (Pix).`
             : (ev.savedAmount > 0 ? ` (com ${Utils.formatCurrency(ev.savedAmount)} de entrada já separada).` : '.');
-          confirmMsg = `Deseja efetivar o financiamento "${plan.title}"? Será criada a Conta Fixa "${billTitlePreview}" no valor de ${Utils.formatCurrency(ev.monthlyImpact)} (vencimento ${Utils.formatDate(dueDate)}, categoria ${plan.category})${entryNote}`;
+          confirmMsg = `Deseja efetivar o financiamento "${plan.title}"? Será criada a Conta Fixa "${billTitlePreview}" no valor de ${Utils.formatCurrency(ev.monthlyImpact)} (vencimento ${Utils.formatDate(dueDate)}${dueMonthNote}, categoria ${plan.category})${entryNote}`;
         } else if (downPaymentMonthImpact > 0) {
           confirmMsg = `Deseja efetivar "${plan.title}"? A entrada cobre 100% do valor e será lançada em Gastos Diários (${Utils.formatCurrency(downPaymentMonthImpact)} via Pix, categoria ${plan.category}).`;
         } else {
           confirmMsg = `Marcar "${plan.title}" como concluído? Como o valor já está 100% coberto pela entrada guardada, nenhuma conta fixa ou gasto adicional será lançado.`;
         }
       } else if (plan.mode === 'installment' && remainingAmount > 0) {
+        const startNote = firstInstallmentOffset > 0 ? `, 1ª parcela em ${Utils.formatPeriod(firstInstallmentPeriod)}` : '';
         const condText = plan.installments > 1
-          ? `${plan.installments} parcelas em ${plan.paymentMethod}`
-          : `1 lançamento à vista (${plan.paymentMethod})`;
+          ? `${plan.installments} parcelas em ${plan.paymentMethod}${startNote}`
+          : `1 lançamento à vista (${plan.paymentMethod}${startNote})`;
         const entryNote = ev.savedAmount > 0
           ? (downPaymentMonthImpact > 0
-            ? ` + lançamento imediato da entrada de ${Utils.formatCurrency(downPaymentMonthImpact)} via Pix`
+            ? ` + lançamento imediato da entrada de ${Utils.formatCurrency(downPaymentMonthImpact)} em ${Utils.formatPeriod(currentPeriod)} via Pix`
             : ` (descontando ${Utils.formatCurrency(ev.savedAmount)} de entrada/reserva já guardada)`)
           : '';
         confirmMsg = `Deseja efetivar "${plan.title}"? Será lançado o valor de ${Utils.formatCurrency(remainingAmount)} em Gastos Diários (${condText}, categoria ${plan.category})${entryNote}.`;
@@ -4577,6 +4757,7 @@
       if (!confirmed) return;
 
       const startDateISO = this.getEffectivePlanStartDate();
+      const firstInstallmentStartDateISO = Utils.shiftDateToPeriod(startDateISO, firstInstallmentPeriod) || startDateISO;
 
       if (plan.mode === 'financing') {
         let feedbackParts = [];
@@ -4594,7 +4775,7 @@
             financingTotalInstallments: ev.installments,
             createdAt: new Date().toISOString()
           });
-          feedbackParts.push(`Conta fixa de ${Utils.formatCurrency(ev.monthlyImpact)} cadastrada`);
+          feedbackParts.push(`Conta fixa da 1ª parcela em ${this.formatCompactPeriod(firstInstallmentPeriod)} (${Utils.formatCurrency(ev.monthlyImpact)}) cadastrada`);
         }
         if (downPaymentMonthImpact > 0) {
           if (!Array.isArray(this.state.expenses)) this.state.expenses = [];
@@ -4622,7 +4803,7 @@
           amount: remainingAmount,
           amountType: 'total',
           count: plan.installments,
-          startDateISO,
+          startDateISO: firstInstallmentStartDateISO,
           category: plan.category,
           method: plan.paymentMethod
         });
@@ -4638,10 +4819,11 @@
             createdAt: new Date().toISOString()
           });
         }
+        const parcelStartLabel = firstInstallmentOffset > 0 ? ` a partir de ${this.formatCompactPeriod(firstInstallmentPeriod)}` : '';
         Toast.show(
           createdExpenses.length > 1
-            ? `Compra "${plan.title}" efetivada em ${createdExpenses.length}x nos Gastos Diários!`
-            : `Compra "${plan.title}" lançada em Gastos Diários!`,
+            ? `Compra "${plan.title}" efetivada em ${createdExpenses.length}x nos Gastos Diários${parcelStartLabel}!`
+            : `Compra "${plan.title}" lançada em Gastos Diários${parcelStartLabel}!`,
           'success'
         );
       } else if (plan.mode === 'installment' && downPaymentMonthImpact > 0) {

@@ -1210,6 +1210,17 @@
             <p id="planDownPaymentSourceHint" class="text-[10px] text-slate-400">
               Considera a entrada já separada fora do fluxo deste mês (apenas reduz o saldo parcelado/financiado).
             </p>
+            <div class="pt-2 border-t border-white/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <label for="planFirstInstallmentOffsetSelect" class="text-[11px] font-medium text-slate-300">
+                Início da 1ª parcela
+              </label>
+              <select id="planFirstInstallmentOffsetSelect"
+                class="sm:w-64 px-3 py-1.5 bg-slate-950/70 border border-white/10 rounded-lg text-xs text-white focus:outline-none focus:ring-2 focus:ring-violet-500">
+                <option value="1" selected>Próximo mês (em 30 dias)</option>
+                <option value="0">Neste mês (mês atual)</option>
+                <option value="2">Daqui a 2 meses (60 dias)</option>
+              </select>
+            </div>
           </div>
 
           <!-- Integração com Caixinhas / Reservas -->
