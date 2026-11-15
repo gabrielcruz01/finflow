@@ -316,6 +316,99 @@
 
         </div>
       </div>
+
+      <!-- 1.2 PAINEL DE SAÚDE FINANCEIRA (7 PILARES DAS FINANÇAS PESSOAIS) -->
+      <div id="financialHealthPanel" class="bg-slate-800/85 border border-slate-700/70 rounded-2xl p-4 sm:p-5 shadow-sm mt-4 space-y-3.5">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <div class="flex items-center gap-2.5 flex-wrap">
+            <div class="w-8 h-8 rounded-xl bg-indigo-500/15 border border-indigo-500/30 text-indigo-400 flex items-center justify-center text-xs flex-shrink-0">
+              <i class="fa-solid fa-heart-pulse"></i>
+            </div>
+            <div>
+              <div class="flex items-center gap-2 flex-wrap">
+                <h3 class="text-sm font-bold text-white">Saúde Financeira (7 Pilares)</h3>
+                <span id="healthScoreBadge" class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-900 border border-slate-700 text-slate-300">Analisando...</span>
+              </div>
+              <p id="healthPanelSubtitle" class="text-[11px] text-slate-400">Custo de vida, metas de economia, reserva de emergência, anuais e dívidas</p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <button id="openGoalsModalBtn" type="button" class="tap-target px-2.5 py-1.5 bg-slate-900/80 hover:bg-slate-700 text-emerald-300 border border-emerald-500/30 rounded-xl text-[11px] font-semibold flex items-center gap-1.5 transition-smooth">
+              <i class="fa-solid fa-bullseye"></i>
+              <span>Metas &amp; Emergência</span>
+            </button>
+            <button id="openAnnualModalBtn" type="button" class="tap-target px-2.5 py-1.5 bg-slate-900/80 hover:bg-slate-700 text-sky-300 border border-sky-500/30 rounded-xl text-[11px] font-semibold flex items-center gap-1.5 transition-smooth">
+              <i class="fa-solid fa-calendar-days"></i>
+              <span>Despesas Anuais</span>
+            </button>
+            <button id="openDebtsModalBtn" type="button" class="tap-target px-2.5 py-1.5 bg-slate-900/80 hover:bg-slate-700 text-rose-300 border border-rose-500/30 rounded-xl text-[11px] font-semibold flex items-center gap-1.5 transition-smooth">
+              <i class="fa-solid fa-scale-unbalanced"></i>
+              <span>Dívidas</span>
+              <span id="healthDebtsCountBadge" class="hidden px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[9px] font-bold leading-none">0</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+          <!-- Card A: Custo de Vida & Essenciais (Dicas 1 & 4) -->
+          <div class="p-3.5 rounded-xl bg-slate-900/65 border border-slate-700/60 space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Custo de Vida Fixo</span>
+              <span id="healthFixedPctBadge" class="px-1.5 py-0.5 rounded-md bg-slate-800 text-[10px] font-semibold text-slate-300">0% renda</span>
+            </div>
+            <div id="healthLivingCostValue" class="text-base font-bold text-slate-100">R$ 0,00</div>
+            <p id="healthLivingCostSub" class="text-[11px] text-slate-400 leading-snug">Fixas estruturais + média mensal</p>
+            <div class="pt-1 space-y-1 border-t border-slate-800/80">
+              <div class="flex items-center justify-between text-[10px] text-slate-400">
+                <span>Essencial vs Supérfluo</span>
+                <span id="healthNatureRatioText" class="font-semibold text-slate-300">—</span>
+              </div>
+              <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden flex">
+                <div id="healthEssentialBar" class="h-full bg-emerald-500 transition-all duration-500" style="width: 0%"></div>
+                <div id="healthSuperfluousBar" class="h-full bg-amber-400 transition-all duration-500" style="width: 0%"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card B: Pague-se Primeiro (Dica 2) -->
+          <div class="p-3.5 rounded-xl bg-slate-900/65 border border-slate-700/60 space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Pague-se Primeiro</span>
+              <span id="healthSaveGoalPctBadge" class="px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 text-[10px] font-semibold">0%</span>
+            </div>
+            <div id="healthSaveGoalValue" class="text-base font-bold text-emerald-300">R$ 0,00</div>
+            <p id="healthSaveGoalSub" class="text-[11px] text-slate-400 leading-snug">Meta mensal de economia</p>
+            <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+              <div id="healthSaveGoalBar" class="h-full bg-emerald-500 rounded-full transition-all duration-500" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <!-- Card C: Reserva de Emergência (Dica 7) -->
+          <div class="p-3.5 rounded-xl bg-slate-900/65 border border-slate-700/60 space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Reserva Emergencial</span>
+              <span id="healthEmergencyPctBadge" class="px-1.5 py-0.5 rounded-md bg-teal-500/15 text-teal-300 border border-teal-500/25 text-[10px] font-semibold">0%</span>
+            </div>
+            <div id="healthEmergencyValue" class="text-base font-bold text-teal-300">0 meses</div>
+            <p id="healthEmergencySub" class="text-[11px] text-slate-400 leading-snug">Meta sugerida: 6 meses de custo de vida</p>
+            <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+              <div id="healthEmergencyBar" class="h-full bg-teal-400 rounded-full transition-all duration-500" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <!-- Card D: Despesas Anuais & Dívidas (Dicas 5 & 6) -->
+          <div class="p-3.5 rounded-xl bg-slate-900/65 border border-slate-700/60 space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Anuais &amp; Dívidas</span>
+              <span id="healthDebtStatusBadge" class="px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 text-[10px] font-semibold">Sem dívidas</span>
+            </div>
+            <div id="healthAnnualValue" class="text-base font-bold text-sky-300">R$ 0,00/mês</div>
+            <p id="healthAnnualSub" class="text-[11px] text-slate-400 leading-snug">Nenhuma despesa anual provisionada</p>
+            <p id="healthDebtSub" class="text-[11px] text-slate-300 pt-1 border-t border-slate-800/80 leading-snug">Sem dívidas ou atrasos pendentes</p>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- 2. GRID PRINCIPAL: CONTAS & GASTOS & GRÁFICO -->
@@ -443,6 +536,11 @@
               <option value="Cartão de Débito">Cartão de Débito</option>
               <option value="Dinheiro">Dinheiro</option>
             </select>
+            <select id="expenseNatureFilter" class="px-3 py-2 bg-slate-900/70 border border-slate-700/70 rounded-xl text-xs text-slate-200 focus:border-indigo-500 transition-colors">
+              <option value="all">Essencial + Supérfluo</option>
+              <option value="essential">Somente Essenciais</option>
+              <option value="superfluous">Somente Supérfluos</option>
+            </select>
           </div>
 
           <!-- Lista de Lançamentos -->
@@ -480,6 +578,9 @@
 
           <!-- Detalhamento de Categorias no Mês -->
           <div id="categoryBreakdownList" class="mt-4 pt-3 border-t border-slate-700/60 space-y-2 text-xs">
+            <!-- Inserido dinamicamente via app.js -->
+          </div>
+          <div id="natureBreakdownSummary" class="mt-3 pt-3 border-t border-slate-700/60 text-xs">
             <!-- Inserido dinamicamente via app.js -->
           </div>
         </section>
@@ -693,6 +794,30 @@
             </div>
           </div>
 
+          <!-- Separar automaticamente ao receber (Pague-se Primeiro) -->
+          <div id="incomeAutoReserveBox" class="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/20 space-y-2.5">
+            <label class="flex items-center justify-between gap-2 cursor-pointer select-none">
+              <span class="text-xs font-semibold text-emerald-300 flex items-center gap-2">
+                <i class="fa-solid fa-piggy-bank"></i>
+                Separar para Caixinha ao receber (Pague-se Primeiro)
+              </span>
+              <input type="checkbox" id="incomeAutoReserveCheck" class="w-4 h-4 rounded text-emerald-500 focus:ring-emerald-500 bg-slate-900 border-slate-600 cursor-pointer" />
+            </label>
+            <div id="incomeAutoReserveFields" class="hidden grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2 border-t border-emerald-500/15">
+              <div>
+                <label for="incomeAutoReservePercentInput" class="block text-[11px] font-medium text-slate-300 mb-1">Percentual (%)</label>
+                <input type="text" id="incomeAutoReservePercentInput" inputmode="decimal" value="10" class="w-full px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-slate-100 text-xs font-semibold focus:border-emerald-500" />
+                <span id="incomeAutoReservePreview" class="block text-[10px] text-emerald-300/90 mt-1">Separar: R$ 0,00</span>
+              </div>
+              <div>
+                <label for="incomeAutoReserveTargetSelect" class="block text-[11px] font-medium text-slate-300 mb-1">Caixinha de destino</label>
+                <select id="incomeAutoReserveTargetSelect" class="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-slate-100 text-xs focus:border-emerald-500">
+                  <!-- Preenchido via app.js -->
+                </select>
+              </div>
+            </div>
+          </div>
+
           <div class="pt-1 flex items-center justify-end gap-2">
             <button type="submit" id="incomeSubmitBtn" class="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white rounded-xl text-xs font-semibold transition-smooth shadow-md shadow-emerald-600/20 flex items-center justify-center gap-1.5">
               <i class="fa-solid fa-plus"></i>
@@ -796,6 +921,31 @@
           </div>
         </div>
 
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1.5">Classificação do Gasto</label>
+            <input type="hidden" id="billNatureInput" value="essential" />
+            <div class="grid grid-cols-2 gap-1.5 p-1 bg-slate-900 border border-slate-700 rounded-xl">
+              <button type="button" data-bill-nature="essential" class="bill-nature-btn px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-smooth bg-emerald-600 text-white shadow-sm">
+                Essencial
+              </button>
+              <button type="button" data-bill-nature="superfluous" class="bill-nature-btn px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-smooth text-slate-400 hover:text-white">
+                Supérfluo
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label for="billLateFeeInput" class="block text-xs font-medium text-slate-300 mb-1.5">
+              Multa / Juros de Atraso (R$) <span class="text-slate-500 font-normal">(opcional)</span>
+            </label>
+            <div class="relative">
+              <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-semibold">R$</span>
+              <input type="text" id="billLateFeeInput" inputmode="numeric" placeholder="0,00" class="money-input w-full pl-9 pr-3.5 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 text-sm font-semibold focus:border-rose-500 transition-colors" />
+            </div>
+          </div>
+        </div>
+
         <div class="pt-3 flex items-center justify-end gap-2.5 border-t border-slate-700/60">
           <button type="button" data-close-modal="billModal" class="px-4 py-2.5 bg-slate-700/60 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-colors">
             Cancelar
@@ -881,6 +1031,21 @@
           </div>
         </div>
 
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-1.5">Classificação (Essencial vs Supérfluo)</label>
+          <input type="hidden" id="expenseNatureInput" value="essential" />
+          <div class="grid grid-cols-2 gap-2 p-1 bg-slate-900 border border-slate-700 rounded-xl">
+            <button type="button" data-expense-nature="essential" class="expense-nature-btn px-3 py-1.5 rounded-lg text-xs font-semibold transition-smooth bg-emerald-600 text-white shadow-sm flex items-center justify-center gap-1.5">
+              <i class="fa-solid fa-shield-heart text-[10px]"></i>
+              <span>Essencial</span>
+            </button>
+            <button type="button" data-expense-nature="superfluous" class="expense-nature-btn px-3 py-1.5 rounded-lg text-xs font-semibold transition-smooth text-slate-400 hover:text-white flex items-center justify-center gap-1.5">
+              <i class="fa-solid fa-bag-shopping text-[10px]"></i>
+              <span>Supérfluo / Desejo</span>
+            </button>
+          </div>
+        </div>
+
         <!-- Opção de Parcelamento de Despesa -->
         <div id="expenseInstallmentContainer" class="p-3 bg-slate-900/80 border border-slate-700/60 rounded-xl space-y-2.5">
           <label class="flex items-center justify-between cursor-pointer select-none">
@@ -926,6 +1091,8 @@
             </div>
           </div>
         </div>
+
+        <div id="expenseBudgetPreview" class="hidden p-2.5 rounded-xl border text-[11px] flex items-center gap-2"></div>
 
         <div class="pt-3 flex items-center justify-end gap-2.5 border-t border-slate-700/60">
           <button type="button" data-close-modal="expenseModal" class="px-4 py-2.5 bg-slate-700/60 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-colors">
@@ -985,7 +1152,19 @@
       </div>
 
       <form id="budgetForm" class="mt-4 flex-1 overflow-y-auto pr-1 space-y-3.5">
-        <p class="text-xs text-slate-400">Deixe em branco ou R$ 0,00 nas categorias que não deseja limitar.</p>
+        <div class="p-3 rounded-xl bg-slate-900/70 border border-slate-700/60 flex flex-wrap items-center justify-between gap-2">
+          <div class="text-[11px] text-slate-400">
+            Defina tetos em <strong class="text-slate-200">R$ fixo</strong> ou <strong class="text-amber-400">% da renda do mês</strong>. Zere ou deixe em branco para sem limite.
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button type="button" id="budgetPresetBalancedBtn" class="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-[11px] font-semibold transition-colors">
+              <i class="fa-solid fa-wand-magic-sparkles mr-1"></i>Sugestão % Equilibrada
+            </button>
+            <button type="button" id="budgetClearAllBtn" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-[11px] font-semibold transition-colors">
+              Limpar
+            </button>
+          </div>
+        </div>
         
         <div id="budgetInputsContainer" class="space-y-3">
           <!-- Inserido dinamicamente via app.js -->
@@ -1158,6 +1337,22 @@
                 <option value="Assinaturas">Assinaturas</option>
                 <option value="Outros">Outros</option>
               </select>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1">Prioridade e Necessidade (Consumo Consciente)</label>
+            <input type="hidden" id="planPriorityInput" value="important" />
+            <div class="grid grid-cols-3 gap-1.5 p-1 bg-slate-900 border border-slate-700 rounded-xl">
+              <button type="button" data-plan-priority="essential" class="plan-priority-btn px-2 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition-smooth">
+                <i class="fa-solid fa-shield-heart text-[10px] mr-1"></i>Essencial
+              </button>
+              <button type="button" data-plan-priority="important" class="plan-priority-btn px-2 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white shadow-sm transition-smooth">
+                <i class="fa-solid fa-star text-[10px] mr-1"></i>Importante
+              </button>
+              <button type="button" data-plan-priority="desire" class="plan-priority-btn px-2 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition-smooth">
+                <i class="fa-solid fa-sparkles text-[10px] mr-1"></i>Desejo
+              </button>
             </div>
           </div>
 
@@ -1386,6 +1581,7 @@
             <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400">Planejamentos Salvos</h4>
             <span id="plansCountBadge" class="px-2 py-0.5 text-[11px] font-semibold bg-slate-900 border border-slate-700 text-slate-300 rounded-full">0 planos</span>
           </div>
+          <div id="plansPriorityInsight" class="hidden p-2.5 rounded-xl bg-slate-900/80 border border-slate-700/60 text-[11px] text-slate-300"></div>
           <div id="plansListContainer" class="space-y-2.5">
             <!-- Inserido dinamicamente via app.js -->
           </div>
@@ -1434,6 +1630,8 @@
             Saldo contínuo entre os meses — não soma como renda do mês.
           </span>
         </div>
+
+        <div id="reservesEmergencyBanner" class="hidden p-3 rounded-xl border text-xs"></div>
 
         <!-- Seletor de Aba: Movimentar vs Nova/Editar Caixinha -->
         <div class="grid grid-cols-2 gap-2 p-1 bg-slate-950/80 border border-slate-800 rounded-xl">
@@ -1538,6 +1736,7 @@
                 <label for="reserveTypeSelect" class="block text-xs font-medium text-slate-300 mb-1">Tipo / Onde fica guardado</label>
                 <select id="reserveTypeSelect" class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 text-sm focus:border-teal-500 transition-colors">
                   <option value="Reserva de Emergência" selected>Reserva de Emergência</option>
+                  <option value="Despesas Anuais">Despesas Anuais (IPVA/IPTU/Seguro)</option>
                   <option value="Caixinha / Conta Rende">Caixinha / Conta Rende</option>
                   <option value="Poupança">Poupança</option>
                   <option value="Investimentos / CDB">Investimentos / CDB</option>
@@ -1604,6 +1803,280 @@
         </button>
       </div>
 
+    </div>
+  </div>
+
+  <!-- 9. MODAL: METAS DE ECONOMIA & RESERVA DE EMERGÊNCIA ("PAGUE-SE PRIMEIRO") -->
+  <div id="goalsModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="modal-backdrop fixed inset-0 bg-slate-950/80 backdrop-blur-sm modal-backdrop-animate"></div>
+    <div class="modal-content relative bg-slate-800 border border-slate-700 w-full max-w-lg rounded-2xl shadow-2xl p-6 modal-content-animate z-10 flex flex-col max-h-[90vh]">
+      <div class="flex items-center justify-between pb-4 border-b border-slate-700 flex-shrink-0">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-teal-500/10 text-teal-400 flex items-center justify-center">
+            <i class="fa-solid fa-piggy-bank text-sm"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-white text-base">Metas de Economia &amp; Reserva</h3>
+            <p class="text-[11px] text-slate-400">Separe primeiro sua economia mensal e defina meses de segurança.</p>
+          </div>
+        </div>
+        <button data-close-modal="goalsModal" class="w-8 h-8 rounded-lg bg-slate-700/50 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <form id="goalsForm" class="mt-4 flex-1 overflow-y-auto pr-1 space-y-4">
+        <div class="p-3.5 rounded-xl bg-slate-900/70 border border-slate-700/60 space-y-3">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+              <i class="fa-solid fa-coins text-teal-400"></i>Meta Mensal de Economia ("Pague-se Primeiro")
+            </span>
+            <div class="flex items-center gap-1 p-0.5 bg-slate-950 border border-slate-700 rounded-lg">
+              <input type="hidden" id="goalSaveModeInput" value="percent" />
+              <button type="button" data-goal-mode="percent" class="goal-mode-btn px-2 py-1 rounded text-[11px] font-semibold bg-teal-600 text-white transition-smooth">% Renda</button>
+              <button type="button" data-goal-mode="fixed" class="goal-mode-btn px-2 py-1 rounded text-[11px] font-semibold text-slate-400 hover:text-white transition-smooth">R$ Fixo</button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+            <div id="goalSavePercentWrap">
+              <label for="goalSavePercentInput" class="block text-[11px] font-medium text-slate-300 mb-1">Percentual da Renda (%)</label>
+              <input type="number" id="goalSavePercentInput" min="0" max="90" step="1" value="20" class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 text-sm font-semibold focus:border-teal-500 transition-colors" />
+            </div>
+            <div id="goalSaveFixedWrap" class="hidden">
+              <label for="goalSaveValueInput" class="block text-[11px] font-medium text-slate-300 mb-1">Valor Mensal Fixo (R$)</label>
+              <div class="relative">
+                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-semibold">R$</span>
+                <input type="text" id="goalSaveValueInput" inputmode="numeric" placeholder="0,00" class="money-input w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 text-sm font-semibold focus:border-teal-500 transition-colors" />
+              </div>
+            </div>
+            <div>
+              <span class="block text-[11px] font-medium text-slate-400 mb-1">Atalhos rápidos</span>
+              <div class="flex items-center gap-1.5">
+                <button type="button" data-goal-pct="10" class="px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold">10%</button>
+                <button type="button" data-goal-pct="20" class="px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-teal-300 text-[11px] font-semibold">20%</button>
+                <button type="button" data-goal-pct="30" class="px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold">30%</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="goalSaveLivePreview" class="text-[11px] text-slate-400 bg-slate-950/60 border border-slate-800 rounded-lg p-2.5"></div>
+        </div>
+
+        <div class="p-3.5 rounded-xl bg-slate-900/70 border border-slate-700/60 space-y-3">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+              <i class="fa-solid fa-shield-halved text-sky-400"></i>Cobertura da Reserva de Emergência
+            </span>
+            <input type="hidden" id="goalEmergencyMonthsInput" value="6" />
+          </div>
+          <p class="text-[11px] text-slate-400">Quantos meses do seu Custo de Vida Fixo a Reserva de Emergência deve cobrir?</p>
+          <div class="grid grid-cols-4 gap-2">
+            <button type="button" data-emergency-months="3" class="goal-months-btn py-2 rounded-xl border border-slate-700 bg-slate-950 text-xs font-semibold text-slate-300 hover:border-sky-500 transition-smooth">3 meses</button>
+            <button type="button" data-emergency-months="6" class="goal-months-btn py-2 rounded-xl border border-sky-500 bg-sky-500/20 text-xs font-semibold text-sky-300 transition-smooth">6 meses</button>
+            <button type="button" data-emergency-months="9" class="goal-months-btn py-2 rounded-xl border border-slate-700 bg-slate-950 text-xs font-semibold text-slate-300 hover:border-sky-500 transition-smooth">9 meses</button>
+            <button type="button" data-emergency-months="12" class="goal-months-btn py-2 rounded-xl border border-slate-700 bg-slate-950 text-xs font-semibold text-slate-300 hover:border-sky-500 transition-smooth">12 meses</button>
+          </div>
+          <div id="goalEmergencyPreview" class="text-[11px] text-slate-300 bg-slate-950/60 border border-slate-800 rounded-lg p-2.5"></div>
+        </div>
+
+        <div class="pt-3 flex items-center justify-end gap-2.5 border-t border-slate-700/60">
+          <button type="button" data-close-modal="goalsModal" class="px-4 py-2 bg-slate-700/60 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-colors">Cancelar</button>
+          <button type="submit" id="goalsSaveBtn" class="px-5 py-2 bg-teal-600 hover:bg-teal-500 text-white rounded-xl text-xs font-semibold transition-smooth shadow-md shadow-teal-600/20">Salvar Metas</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 10. MODAL: DESPESAS ANUAIS & PROVISÃO MENSAL (IPVA, IPTU, SEGUROS) -->
+  <div id="annualExpensesModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="modal-backdrop fixed inset-0 bg-slate-950/80 backdrop-blur-sm modal-backdrop-animate"></div>
+    <div class="modal-content relative bg-slate-800 border border-slate-700 w-full max-w-2xl rounded-2xl shadow-2xl p-6 modal-content-animate z-10 flex flex-col max-h-[92vh]">
+      <div class="flex items-center justify-between pb-4 border-b border-slate-700 flex-shrink-0">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-sky-500/10 text-sky-400 flex items-center justify-center">
+            <i class="fa-solid fa-calendar-check text-sm"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-white text-base">Despesas Anuais &amp; Provisão (/ 12)</h3>
+            <p class="text-[11px] text-slate-400">Dilua IPVA, IPTU, Seguro e anuidades mês a mês para evitar apertos.</p>
+          </div>
+        </div>
+        <button data-close-modal="annualExpensesModal" class="w-8 h-8 rounded-lg bg-slate-700/50 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="mt-4 flex-1 overflow-y-auto pr-1 space-y-4">
+        <div id="annualSummaryBanner" class="p-3.5 rounded-xl bg-sky-500/10 border border-sky-500/30 flex flex-wrap items-center justify-between gap-3"></div>
+
+        <form id="annualExpenseForm" class="p-4 bg-slate-900/70 border border-slate-700/60 rounded-xl space-y-3">
+          <input type="hidden" id="annualEditId" value="" />
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <span class="text-xs font-bold text-slate-200">Cadastrar / Editar Despesa Anual</span>
+            <div class="flex flex-wrap items-center gap-1">
+              <button type="button" data-annual-preset="IPVA" data-annual-cat="Transporte" data-annual-month="1" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-300 font-semibold">IPVA</button>
+              <button type="button" data-annual-preset="IPTU" data-annual-cat="Moradia" data-annual-month="2" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-300 font-semibold">IPTU</button>
+              <button type="button" data-annual-preset="Seguro Auto" data-annual-cat="Transporte" data-annual-month="6" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-300 font-semibold">Seguro</button>
+              <button type="button" data-annual-preset="Matrícula / Material" data-annual-cat="Educação" data-annual-month="1" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-300 font-semibold">Escolar</button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label for="annualTitleInput" class="block text-[11px] font-medium text-slate-300 mb-1">Descrição</label>
+              <input type="text" id="annualTitleInput" placeholder="Ex: IPVA Carro, IPTU, Seguro..." class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 text-sm focus:border-sky-500 transition-colors" required />
+            </div>
+            <div>
+              <label for="annualCategorySelect" class="block text-[11px] font-medium text-slate-300 mb-1">Categoria</label>
+              <select id="annualCategorySelect" class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 text-sm focus:border-sky-500 transition-colors">
+                <option value="Moradia">Moradia</option>
+                <option value="Transporte">Transporte</option>
+                <option value="Saúde">Saúde</option>
+                <option value="Educação">Educação</option>
+                <option value="Serviços">Serviços</option>
+                <option value="Assinaturas">Assinaturas</option>
+                <option value="Outros" selected>Outros</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label for="annualAmountInput" class="block text-[11px] font-medium text-slate-300 mb-1">Valor Anual Estimado (R$)</label>
+              <div class="relative">
+                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-semibold">R$</span>
+                <input type="text" id="annualAmountInput" inputmode="numeric" placeholder="0,00" class="money-input w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 text-sm font-semibold focus:border-sky-500 transition-colors" required />
+              </div>
+            </div>
+            <div>
+              <label for="annualDueMonthSelect" class="block text-[11px] font-medium text-slate-300 mb-1">Mês de Vencimento</label>
+              <select id="annualDueMonthSelect" class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 text-sm focus:border-sky-500 transition-colors">
+                <option value="1">Janeiro</option>
+                <option value="2">Fevereiro</option>
+                <option value="3">Março</option>
+                <option value="4">Abril</option>
+                <option value="5">Maio</option>
+                <option value="6">Junho</option>
+                <option value="7">Julho</option>
+                <option value="8">Agosto</option>
+                <option value="9">Setembro</option>
+                <option value="10">Outubro</option>
+                <option value="11">Novembro</option>
+                <option value="12">Dezembro</option>
+              </select>
+            </div>
+            <div>
+              <label for="annualReserveSelect" class="block text-[11px] font-medium text-slate-300 mb-1">Caixinha vinculada <span class="text-slate-500">(opcional)</span></label>
+              <select id="annualReserveSelect" class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 text-sm focus:border-sky-500 transition-colors">
+                <option value="">Sem vínculo específico</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-end gap-2 pt-2">
+            <button type="button" id="annualCancelEditBtn" class="hidden px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold">Cancelar Edição</button>
+            <button type="submit" id="annualSubmitBtn" class="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold transition-smooth shadow-md shadow-sky-600/20">Salvar Despesa Anual</button>
+          </div>
+        </form>
+
+        <div id="annualExpensesListContainer" class="space-y-2.5"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 11. MODAL: PAINEL DE DÍVIDAS & ESTRATÉGIA DE QUITAÇÃO (AVALANCHE VS BOLA DE NEVE) -->
+  <div id="debtsModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="modal-backdrop fixed inset-0 bg-slate-950/80 backdrop-blur-sm modal-backdrop-animate"></div>
+    <div class="modal-content relative bg-slate-800 border border-slate-700 w-full max-w-2xl rounded-2xl shadow-2xl p-6 modal-content-animate z-10 flex flex-col max-h-[92vh]">
+      <div class="flex items-center justify-between pb-4 border-b border-slate-700 flex-shrink-0">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-rose-500/10 text-rose-400 flex items-center justify-center">
+            <i class="fa-solid fa-link-slash text-sm"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-white text-base">Painel de Dívidas &amp; Quitação</h3>
+            <p class="text-[11px] text-slate-400">Priorize juros caros (Avalanche) ou saldo menor (Bola de Neve) e amortize dívidas.</p>
+          </div>
+        </div>
+        <button data-close-modal="debtsModal" class="w-8 h-8 rounded-lg bg-slate-700/50 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="mt-4 flex-1 overflow-y-auto pr-1 space-y-4">
+        <div id="debtsSummaryBanner" class="p-3.5 rounded-xl bg-slate-900/80 border border-slate-700/70 space-y-2.5"></div>
+
+        <!-- Simulador de Quitação -->
+        <div class="p-3.5 rounded-xl bg-slate-900/70 border border-slate-700/60 space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <span class="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+              <i class="fa-solid fa-bolt text-amber-400"></i>Estratégia de Aceleração
+            </span>
+            <div class="flex items-center gap-1 p-0.5 bg-slate-950 border border-slate-700 rounded-lg">
+              <input type="hidden" id="debtStrategyInput" value="avalanche" />
+              <button type="button" data-debt-strategy="avalanche" class="debt-strategy-btn px-2.5 py-1 rounded text-[11px] font-semibold bg-rose-600 text-white transition-smooth">Avalanche (Menor Juro)</button>
+              <button type="button" data-debt-strategy="snowball" class="debt-strategy-btn px-2.5 py-1 rounded text-[11px] font-semibold text-slate-400 hover:text-white transition-smooth">Bola de Neve (Menor Saldo)</button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+            <div>
+              <label for="debtExtraMonthlyInput" class="block text-[11px] font-medium text-slate-300 mb-1">Aporte Extra Mensal para Quitar (R$)</label>
+              <div class="relative">
+                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-semibold">R$</span>
+                <input type="text" id="debtExtraMonthlyInput" inputmode="numeric" placeholder="0,00" class="money-input w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 text-sm font-semibold focus:border-rose-500 transition-colors" />
+              </div>
+            </div>
+            <div id="debtStrategyProjection" class="text-[11px] text-slate-300 bg-slate-950/60 border border-slate-800 rounded-lg p-2.5"></div>
+          </div>
+        </div>
+
+        <!-- Cadastro / Edição de Dívida -->
+        <form id="debtForm" class="p-4 bg-slate-900/70 border border-slate-700/60 rounded-xl space-y-3">
+          <input type="hidden" id="debtEditId" value="" />
+          <span class="block text-xs font-bold text-slate-200">Registrar / Atualizar Dívida</span>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label for="debtTitleInput" class="block text-[11px] font-medium text-slate-300 mb-1">Descrição da Dívida</label>
+              <input type="text" id="debtTitleInput" placeholder="Ex: Fatura Atrasada, Empréstimo..." class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 text-sm focus:border-rose-500 transition-colors" required />
+            </div>
+            <div>
+              <label for="debtCreditorInput" class="block text-[11px] font-medium text-slate-300 mb-1">Credor / Banco <span class="text-slate-500">(opcional)</span></label>
+              <input type="text" id="debtCreditorInput" placeholder="Ex: Nubank, Itaú..." class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 text-sm focus:border-rose-500 transition-colors" />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label for="debtBalanceInput" class="block text-[11px] font-medium text-slate-300 mb-1">Saldo Devedor Atual (R$)</label>
+              <div class="relative">
+                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-semibold">R$</span>
+                <input type="text" id="debtBalanceInput" inputmode="numeric" placeholder="0,00" class="money-input w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 text-sm font-semibold focus:border-rose-500 transition-colors" required />
+              </div>
+            </div>
+            <div>
+              <label for="debtMonthlyPaymentInput" class="block text-[11px] font-medium text-slate-300 mb-1">Parcela / Mínimo Mensal (R$)</label>
+              <div class="relative">
+                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-semibold">R$</span>
+                <input type="text" id="debtMonthlyPaymentInput" inputmode="numeric" placeholder="0,00" class="money-input w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 text-sm font-semibold focus:border-rose-500 transition-colors" />
+              </div>
+            </div>
+            <div>
+              <label for="debtInterestInput" class="block text-[11px] font-medium text-slate-300 mb-1">Juros (% ao mês)</label>
+              <input type="number" id="debtInterestInput" min="0" max="100" step="0.1" placeholder="Ex: 8.5" class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 text-sm font-semibold focus:border-rose-500 transition-colors" />
+            </div>
+          </div>
+
+          <div class="flex items-center justify-end gap-2 pt-2">
+            <button type="button" id="debtCancelEditBtn" class="hidden px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold">Cancelar Edição</button>
+            <button type="submit" id="debtSubmitBtn" class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold transition-smooth shadow-md shadow-rose-600/20">Salvar Dívida</button>
+          </div>
+        </form>
+
+        <div id="debtsListContainer" class="space-y-2.5"></div>
+      </div>
     </div>
   </div>
 

@@ -58,6 +58,7 @@
 
   const RESERVE_TYPE_META = {
     'Reserva de Emergência': { icon: 'fa-shield-halved', color: '#10b981' },
+    'Despesas Anuais': { icon: 'fa-calendar-days', color: '#38bdf8' },
     'Caixinha / Conta Rende': { icon: 'fa-piggy-bank', color: '#14b8a6' },
     'Poupança': { icon: 'fa-building-columns', color: '#3b82f6' },
     'Investimentos / CDB': { icon: 'fa-chart-line', color: '#f59e0b' },
@@ -65,6 +66,43 @@
     'Objetivo / Sonho': { icon: 'fa-star', color: '#a855f7' },
     'Outros': { icon: 'fa-vault', color: '#64748b' }
   };
+
+  const ESSENTIAL_DEFAULT_CATEGORIES = new Set([
+    'Moradia', 'Alimentação', 'Transporte', 'Saúde', 'Educação', 'Serviços'
+  ]);
+
+  const PLAN_PRIORITY_META = {
+    essential: {
+      label: 'Essencial',
+      badgeClass: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+      icon: 'fa-shield-heart',
+      rank: 0
+    },
+    important: {
+      label: 'Importante',
+      badgeClass: 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30',
+      icon: 'fa-star',
+      rank: 1
+    },
+    desire: {
+      label: 'Desejo',
+      badgeClass: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+      icon: 'fa-sparkles',
+      rank: 2
+    }
+  };
+
+  const BALANCED_BUDGET_PRESET_PERCENTS = {
+    'Alimentação': 15,
+    'Transporte': 10,
+    'Lazer': 10,
+    'Compras': 5
+  };
+
+  const MONTH_NAMES_PT = [
+    'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+  ];
 
   // ==========================================================================
   // 2. FUNÇÕES UTILITÁRIAS & DEFENSIVIDADE
@@ -515,6 +553,14 @@
           'Transporte': 350.00,
           'Lazer': 250.00
         },
+        financeGoals: {
+          saveGoalMode: 'percent',
+          saveGoalValue: 20,
+          emergencyMonths: 6
+        },
+        annualExpenses: [],
+        debts: [],
+        debtStrategy: 'avalanche',
         plans: [],
         reserves: [],
         alertSettings: Utils.normalizeAlertSettings(),
@@ -712,6 +758,7 @@
         : 0;
       const paymentMethod = METHOD_ICONS[raw.paymentMethod] ? raw.paymentMethod : 'Cartão de Crédito';
       const status = raw.status === 'completed' ? 'completed' : 'active';
+      const priority = PLAN_PRIORITY_META[raw.priority] ? raw.priority : 'important';
 
       return {
         id: (typeof raw.id === 'string' && raw.id.trim()) ? raw.id : Utils.generateUUID(),
@@ -720,6 +767,7 @@
         savedAmount,
         downPaymentSource,
         category,
+        priority,
         mode,
         installments,
         firstInstallmentOffset,
@@ -741,6 +789,129 @@
     normalizePlans(rawPlans) {
       if (!Array.isArray(rawPlans)) return [];
       return rawPlans.map(p => this.normalizePlan(p)).filter(Boolean);
+    },
+
+    normalizeBudgets(rawBudgets) {
+      if (!rawBudgets || typeof rawBudgets !== 'object') return {};
+      const out = {};
+      Object.entries(rawBudgets).forEach(([cat, val]) => {
+        if (typeof val === 'number' && Number.isFinite(val) && val > 0) {
+          out[cat] = Math.round(val * 100) / 100;
+        } else if (val && typeof val === 'object') {
+          const mode = val.mode === 'percent' ? 'percent' : 'fixed';
+          const numVal = Number(val.value);
+          if (Number.isFinite(numVal) && numVal > 0) {
+            if (mode === 'percent') {
+              out[cat] = { mode: 'percent', value: Math.min(100, Math.round(numVal * 100) / 100) };
+            } else {
+              out[cat] = Math.round(numVal * 100) / 100;
+            }
+          }
+        }
+      });
+      return out;
+    },
+
+    normalizeFinanceGoals(raw) {
+      const obj = (raw && typeof raw === 'object') ? raw : {};
+      const saveGoalMode = obj.saveGoalMode === 'fixed' ? 'fixed' : 'percent';
+      const parsedVal = Number(obj.saveGoalValue);
+      let saveGoalValue = (Number.isFinite(parsedVal) && parsedVal >= 0)
+        ? Math.round(parsedVal * 100) / 100
+        : (saveGoalMode === 'percent' ? 20 : 0);
+      if (saveGoalMode === 'percent') {
+        saveGoalValue = Math.min(90, saveGoalValue);
+      }
+      const parsedMonths = parseInt(obj.emergencyMonths, 10);
+      const emergencyMonths = [3, 6, 9, 12].includes(parsedMonths) ? parsedMonths : 6;
+      return { saveGoalMode, saveGoalValue, emergencyMonths };
+    },
+
+    normalizeAnnualExpense(raw) {
+      if (!raw || typeof raw !== 'object') return null;
+      const title = (typeof raw.title === 'string' && raw.title.trim()) ? raw.title.trim() : 'Despesa Anual';
+      const category = CATEGORY_COLORS[raw.category] ? raw.category : 'Outros';
+      const parsedAmount = Number(raw.amount);
+      const amount = (Number.isFinite(parsedAmount) && parsedAmount > 0) ? Math.round(parsedAmount * 100) / 100 : 0;
+      if (amount <= 0) return null;
+      const parsedMonth = parseInt(raw.dueMonth, 10);
+      const dueMonth = (Number.isFinite(parsedMonth) && parsedMonth >= 1 && parsedMonth <= 12) ? parsedMonth : 1;
+      const reserveId = (typeof raw.reserveId === 'string' && raw.reserveId.trim()) ? raw.reserveId.trim() : '';
+      const lastDepositedPeriod = (typeof raw.lastDepositedPeriod === 'string' && /^\d{4}-\d{2}$/.test(raw.lastDepositedPeriod))
+        ? raw.lastDepositedPeriod
+        : null;
+      return {
+        id: (typeof raw.id === 'string' && raw.id.trim()) ? raw.id : Utils.generateUUID(),
+        title,
+        category,
+        amount,
+        dueMonth,
+        reserveId,
+        lastDepositedPeriod,
+        createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : new Date().toISOString(),
+        ...(typeof raw.updatedAt === 'string' ? { updatedAt: raw.updatedAt } : {})
+      };
+    },
+
+    normalizeAnnualExpenses(rawList) {
+      if (!Array.isArray(rawList)) return [];
+      return rawList.map(item => this.normalizeAnnualExpense(item)).filter(Boolean);
+    },
+
+    normalizeDebt(raw) {
+      if (!raw || typeof raw !== 'object') return null;
+      const title = (typeof raw.title === 'string' && raw.title.trim()) ? raw.title.trim() : 'Dívida';
+      const creditor = (typeof raw.creditor === 'string') ? raw.creditor.trim() : '';
+      const parsedBal = Number(raw.totalBalance);
+      const totalBalance = (Number.isFinite(parsedBal) && parsedBal >= 0) ? Math.round(parsedBal * 100) / 100 : 0;
+      const parsedPmt = Number(raw.monthlyPayment);
+      const monthlyPayment = (Number.isFinite(parsedPmt) && parsedPmt >= 0) ? Math.round(parsedPmt * 100) / 100 : 0;
+      const parsedRate = Number(raw.interestRatePct);
+      const interestRatePct = (Number.isFinite(parsedRate) && parsedRate >= 0) ? Math.min(200, Math.round(parsedRate * 100) / 100) : 0;
+      const paidOff = Boolean(raw.paidOff) || totalBalance === 0;
+      return {
+        id: (typeof raw.id === 'string' && raw.id.trim()) ? raw.id : Utils.generateUUID(),
+        title,
+        creditor,
+        totalBalance,
+        monthlyPayment,
+        interestRatePct,
+        paidOff,
+        createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : new Date().toISOString(),
+        ...(typeof raw.updatedAt === 'string' ? { updatedAt: raw.updatedAt } : {})
+      };
+    },
+
+    normalizeDebts(rawList) {
+      if (!Array.isArray(rawList)) return [];
+      return rawList.map(item => this.normalizeDebt(item)).filter(Boolean);
+    },
+
+    normalizeBillRecord(bill) {
+      if (!bill || typeof bill !== 'object') return null;
+      const cat = CATEGORY_COLORS[bill.category] ? bill.category : 'Outros';
+      const defaultNature = ESSENTIAL_DEFAULT_CATEGORIES.has(cat) ? 'essential' : 'superfluous';
+      const nature = (bill.nature === 'essential' || bill.nature === 'superfluous') ? bill.nature : defaultNature;
+      const parsedFee = Number(bill.lateFee);
+      const lateFee = (Number.isFinite(parsedFee) && parsedFee > 0) ? Math.round(parsedFee * 100) / 100 : 0;
+      return {
+        ...bill,
+        category: cat,
+        nature,
+        ...(lateFee > 0 ? { lateFee } : {})
+      };
+    },
+
+    normalizeExpenseRecord(expense) {
+      if (!expense || typeof expense !== 'object') return null;
+      const cat = CATEGORY_COLORS[expense.category] ? expense.category : 'Outros';
+      const defaultNature = ESSENTIAL_DEFAULT_CATEGORIES.has(cat) ? 'essential' : 'superfluous';
+      const nature = (expense.nature === 'essential' || expense.nature === 'superfluous') ? expense.nature : defaultNature;
+      return {
+        ...expense,
+        category: cat,
+        nature
+      };
     },
 
     normalizeReserveMovement(raw) {
@@ -825,9 +996,13 @@
         if (!parsed.currentPeriod || !/^\d{4}-\d{2}$/.test(parsed.currentPeriod)) {
           parsed.currentPeriod = Utils.getCurrentPeriodISO();
         }
-        if (!parsed.budgets || typeof parsed.budgets !== 'object') {
-          parsed.budgets = {};
-        }
+        parsed.budgets = this.normalizeBudgets(parsed.budgets);
+        parsed.financeGoals = this.normalizeFinanceGoals(parsed.financeGoals);
+        parsed.annualExpenses = this.normalizeAnnualExpenses(parsed.annualExpenses);
+        parsed.debts = this.normalizeDebts(parsed.debts);
+        parsed.debtStrategy = parsed.debtStrategy === 'snowball' ? 'snowball' : 'avalanche';
+        parsed.bills = parsed.bills.map(b => this.normalizeBillRecord(b)).filter(Boolean);
+        parsed.expenses = parsed.expenses.map(e => this.normalizeExpenseRecord(e)).filter(Boolean);
 
         parsed.incomeEntries = this.normalizeIncomeEntries(parsed);
         parsed.plans = this.normalizePlans(parsed.plans);
@@ -950,6 +1125,9 @@
     billFilter: 'all',
     expenseSearchQuery: '',
     expenseCategoryFilter: 'all',
+    expenseNatureFilter: 'all',
+    billNatureManuallyToggled: false,
+    expenseNatureManuallyToggled: false,
     expandedReserveHistoryIds: new Set(),
 
     init() {
@@ -978,6 +1156,7 @@
     initCurrencyMasks() {
       Utils.attachCurrencyMask(this.incomeInput);
       Utils.attachCurrencyMask(this.billAmountInput);
+      Utils.attachCurrencyMask(this.billLateFeeInput);
       Utils.attachCurrencyMask(this.expenseAmountInput);
       Utils.attachCurrencyMask(this.planTargetAmountInput);
       Utils.attachCurrencyMask(this.planSavedAmountInput);
@@ -986,6 +1165,11 @@
       Utils.attachCurrencyMask(this.reserveMoveAmountInput);
       Utils.attachCurrencyMask(this.reserveBalanceInput);
       Utils.attachCurrencyMask(this.reserveGoalInput);
+      Utils.attachCurrencyMask(this.goalSaveValueInput);
+      Utils.attachCurrencyMask(this.annualAmountInput);
+      Utils.attachCurrencyMask(this.debtBalanceInput);
+      Utils.attachCurrencyMask(this.debtMonthlyPaymentInput);
+      Utils.attachCurrencyMask(this.debtExtraMonthlyInput);
     },
 
     cacheDOMElements() {
@@ -1033,9 +1217,11 @@
       this.expenseSearchInput = document.getElementById('expenseSearchInput');
       this.expenseCategoryFilterSelect = document.getElementById('expenseCategoryFilter');
       this.expenseMethodFilterSelect = document.getElementById('expenseMethodFilter');
+      this.expenseNatureFilterSelect = document.getElementById('expenseNatureFilter');
 
       // Insights, Orçamentos & Planejamento
       this.categoryBreakdownList = document.getElementById('categoryBreakdownList');
+      this.natureBreakdownSummary = document.getElementById('natureBreakdownSummary');
       this.methodsBreakdownContainer = document.getElementById('methodsBreakdownContainer');
       this.budgetBreakdownList = document.getElementById('budgetBreakdownList');
       this.planningBreakdownList = document.getElementById('planningBreakdownList');
@@ -1054,6 +1240,12 @@
       this.incomeTypeSelect = document.getElementById('incomeTypeSelect');
       this.incomeInput = document.getElementById('incomeInput');
       this.incomeDateInput = document.getElementById('incomeDateInput');
+      this.incomeAutoReserveBox = document.getElementById('incomeAutoReserveBox');
+      this.incomeAutoReserveCheck = document.getElementById('incomeAutoReserveCheck');
+      this.incomeAutoReserveFields = document.getElementById('incomeAutoReserveFields');
+      this.incomeAutoReservePercentInput = document.getElementById('incomeAutoReservePercentInput');
+      this.incomeAutoReservePreview = document.getElementById('incomeAutoReservePreview');
+      this.incomeAutoReserveTargetSelect = document.getElementById('incomeAutoReserveTargetSelect');
       this.cancelIncomeEditBtn = document.getElementById('cancelIncomeEditBtn');
       this.incomeSubmitBtn = document.getElementById('incomeSubmitBtn');
       this.incomesListContainer = document.getElementById('incomesListContainer');
@@ -1061,6 +1253,8 @@
       this.budgetModal = document.getElementById('budgetModal');
       this.budgetForm = document.getElementById('budgetForm');
       this.budgetInputsContainer = document.getElementById('budgetInputsContainer');
+      this.budgetPresetBalancedBtn = document.getElementById('budgetPresetBalancedBtn');
+      this.budgetClearAllBtn = document.getElementById('budgetClearAllBtn');
 
       this.billModal = document.getElementById('billModal');
       this.billForm = document.getElementById('billForm');
@@ -1071,6 +1265,9 @@
       this.billAmountInput = document.getElementById('billAmountInput');
       this.billDueDateInput = document.getElementById('billDueDateInput');
       this.billCategorySelect = document.getElementById('billCategorySelect');
+      this.billNatureInput = document.getElementById('billNatureInput');
+      this.billNatureBtns = document.querySelectorAll('.bill-nature-btn');
+      this.billLateFeeInput = document.getElementById('billLateFeeInput');
 
       this.expenseModal = document.getElementById('expenseModal');
       this.expenseForm = document.getElementById('expenseForm');
@@ -1082,6 +1279,9 @@
       this.expenseDateInput = document.getElementById('expenseDateInput');
       this.expenseCategorySelect = document.getElementById('expenseCategorySelect');
       this.expenseMethodSelect = document.getElementById('expenseMethodSelect');
+      this.expenseNatureInput = document.getElementById('expenseNatureInput');
+      this.expenseNatureBtns = document.querySelectorAll('.expense-nature-btn');
+      this.expenseBudgetPreview = document.getElementById('expenseBudgetPreview');
 
       // Parcelamento
       this.expenseInstallmentContainer = document.getElementById('expenseInstallmentContainer');
@@ -1206,6 +1406,87 @@
       this.reserveSubmitBtn = document.getElementById('reserveSubmitBtn');
       this.reservesCountBadge = document.getElementById('reservesCountBadge');
       this.reservesListContainer = document.getElementById('reservesListContainer');
+      this.reservesEmergencyBanner = document.getElementById('reservesEmergencyBanner');
+
+      // Planejamento - Prioridade
+      this.planPriorityInput = document.getElementById('planPriorityInput');
+      this.planPriorityBtns = document.querySelectorAll('.plan-priority-btn');
+      this.plansPriorityInsight = document.getElementById('plansPriorityInsight');
+
+      // Painel Saúde Financeira (7 Pilares)
+      this.financialHealthPanel = document.getElementById('financialHealthPanel');
+      this.healthScoreBadge = document.getElementById('healthScoreBadge');
+      this.healthPanelSubtitle = document.getElementById('healthPanelSubtitle');
+      this.openGoalsModalBtn = document.getElementById('openGoalsModalBtn');
+      this.openAnnualModalBtn = document.getElementById('openAnnualModalBtn');
+      this.openDebtsModalBtn = document.getElementById('openDebtsModalBtn');
+      this.healthDebtsCountBadge = document.getElementById('healthDebtsCountBadge');
+      this.healthFixedPctBadge = document.getElementById('healthFixedPctBadge');
+      this.healthLivingCostValue = document.getElementById('healthLivingCostValue');
+      this.healthLivingCostSub = document.getElementById('healthLivingCostSub');
+      this.healthNatureRatioText = document.getElementById('healthNatureRatioText');
+      this.healthEssentialBar = document.getElementById('healthEssentialBar');
+      this.healthSuperfluousBar = document.getElementById('healthSuperfluousBar');
+      this.healthSaveGoalPctBadge = document.getElementById('healthSaveGoalPctBadge');
+      this.healthSaveGoalValue = document.getElementById('healthSaveGoalValue');
+      this.healthSaveGoalSub = document.getElementById('healthSaveGoalSub');
+      this.healthSaveGoalBar = document.getElementById('healthSaveGoalBar');
+      this.healthEmergencyPctBadge = document.getElementById('healthEmergencyPctBadge');
+      this.healthEmergencyValue = document.getElementById('healthEmergencyValue');
+      this.healthEmergencySub = document.getElementById('healthEmergencySub');
+      this.healthEmergencyBar = document.getElementById('healthEmergencyBar');
+      this.healthDebtStatusBadge = document.getElementById('healthDebtStatusBadge');
+      this.healthAnnualValue = document.getElementById('healthAnnualValue');
+      this.healthAnnualSub = document.getElementById('healthAnnualSub');
+      this.healthDebtSub = document.getElementById('healthDebtSub');
+
+      // Modal Metas & Emergência
+      this.goalsModal = document.getElementById('goalsModal');
+      this.goalsForm = document.getElementById('goalsForm');
+      this.goalSaveModeInput = document.getElementById('goalSaveModeInput');
+      this.goalModeBtns = document.querySelectorAll('.goal-mode-btn');
+      this.goalSavePercentWrap = document.getElementById('goalSavePercentWrap');
+      this.goalSaveFixedWrap = document.getElementById('goalSaveFixedWrap');
+      this.goalSavePercentInput = document.getElementById('goalSavePercentInput');
+      this.goalSaveValueInput = document.getElementById('goalSaveValueInput');
+      this.goalPctPresetBtns = document.querySelectorAll('[data-goal-pct]');
+      this.goalSaveLivePreview = document.getElementById('goalSaveLivePreview');
+      this.goalEmergencyMonthsInput = document.getElementById('goalEmergencyMonthsInput');
+      this.goalMonthsBtns = document.querySelectorAll('.goal-months-btn');
+      this.goalEmergencyPreview = document.getElementById('goalEmergencyPreview');
+
+      // Modal Despesas Anuais
+      this.annualExpensesModal = document.getElementById('annualExpensesModal');
+      this.annualSummaryBanner = document.getElementById('annualSummaryBanner');
+      this.annualExpenseForm = document.getElementById('annualExpenseForm');
+      this.annualEditId = document.getElementById('annualEditId');
+      this.annualTitleInput = document.getElementById('annualTitleInput');
+      this.annualCategorySelect = document.getElementById('annualCategorySelect');
+      this.annualAmountInput = document.getElementById('annualAmountInput');
+      this.annualDueMonthSelect = document.getElementById('annualDueMonthSelect');
+      this.annualReserveSelect = document.getElementById('annualReserveSelect');
+      this.annualCancelEditBtn = document.getElementById('annualCancelEditBtn');
+      this.annualSubmitBtn = document.getElementById('annualSubmitBtn');
+      this.annualPresetBtns = document.querySelectorAll('[data-annual-preset]');
+      this.annualExpensesListContainer = document.getElementById('annualExpensesListContainer');
+
+      // Modal Dívidas & Quitação
+      this.debtsModal = document.getElementById('debtsModal');
+      this.debtsSummaryBanner = document.getElementById('debtsSummaryBanner');
+      this.debtStrategyInput = document.getElementById('debtStrategyInput');
+      this.debtStrategyBtns = document.querySelectorAll('.debt-strategy-btn');
+      this.debtExtraMonthlyInput = document.getElementById('debtExtraMonthlyInput');
+      this.debtStrategyProjection = document.getElementById('debtStrategyProjection');
+      this.debtForm = document.getElementById('debtForm');
+      this.debtEditId = document.getElementById('debtEditId');
+      this.debtTitleInput = document.getElementById('debtTitleInput');
+      this.debtCreditorInput = document.getElementById('debtCreditorInput');
+      this.debtBalanceInput = document.getElementById('debtBalanceInput');
+      this.debtMonthlyPaymentInput = document.getElementById('debtMonthlyPaymentInput');
+      this.debtInterestInput = document.getElementById('debtInterestInput');
+      this.debtCancelEditBtn = document.getElementById('debtCancelEditBtn');
+      this.debtSubmitBtn = document.getElementById('debtSubmitBtn');
+      this.debtsListContainer = document.getElementById('debtsListContainer');
     },
 
     bindEvents() {
@@ -1226,7 +1507,10 @@
         this.billModalTitle.textContent = 'Nova Conta Fixa';
         this.billSubmitBtn.textContent = 'Cadastrar Conta';
         this.billAmountInput.value = '0,00';
+        if (this.billLateFeeInput) this.billLateFeeInput.value = '0,00';
         this.billDueDateInput.value = `${this.state.currentPeriod}-10`;
+        this.billNatureManuallyToggled = false;
+        this.setBillNature(this.getDefaultNatureForCategory(this.billCategorySelect?.value || 'Moradia'));
         this.openModal(this.billModal);
         this.billTitleInput.focus();
       };
@@ -1243,6 +1527,9 @@
         if (this.expenseIsInstallmentCheckbox) this.expenseIsInstallmentCheckbox.checked = false;
         if (this.expenseInstallmentFields) this.expenseInstallmentFields.classList.add('hidden');
         if (this.expenseInstallmentContainer) this.expenseInstallmentContainer.classList.remove('hidden');
+        this.expenseNatureManuallyToggled = false;
+        this.setExpenseNature(this.getDefaultNatureForCategory(this.expenseCategorySelect?.value || 'Alimentação'));
+        this.updateExpenseBudgetPreview();
         this.openModal(this.expenseModal);
         this.expenseDescriptionInput.focus();
       };
@@ -1304,7 +1591,18 @@
             ConfirmDialog.close(false);
             return;
           }
-          [this.incomeModal, this.billModal, this.expenseModal, this.budgetModal, this.alertModal, this.planningModal, this.reservesModal].forEach(m => {
+          [
+            this.incomeModal,
+            this.billModal,
+            this.expenseModal,
+            this.budgetModal,
+            this.alertModal,
+            this.planningModal,
+            this.reservesModal,
+            this.goalsModal,
+            this.annualExpensesModal,
+            this.debtsModal
+          ].forEach(m => {
             if (m && !m.classList.contains('hidden')) this.closeModal(m);
           });
         }
@@ -1448,6 +1746,118 @@
         this.renderExpenses();
       });
 
+      this.expenseNatureFilterSelect?.addEventListener('change', (e) => {
+        this.expenseNatureFilter = e.target.value || 'all';
+        this.renderExpenses();
+      });
+
+      // Classificação Essencial / Supérfluo & Alerta de Teto no Gasto
+      this.billNatureBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          this.billNatureManuallyToggled = true;
+          this.setBillNature(btn.getAttribute('data-bill-nature') || 'essential');
+        });
+      });
+      this.billCategorySelect?.addEventListener('change', () => {
+        if (!this.billEditId?.value && !this.billNatureManuallyToggled) {
+          this.setBillNature(this.getDefaultNatureForCategory(this.billCategorySelect.value));
+        }
+      });
+
+      this.expenseNatureBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          this.expenseNatureManuallyToggled = true;
+          this.setExpenseNature(btn.getAttribute('data-expense-nature') || 'essential');
+        });
+      });
+      this.expenseCategorySelect?.addEventListener('change', () => {
+        if (!this.expenseEditId?.value && !this.expenseNatureManuallyToggled) {
+          this.setExpenseNature(this.getDefaultNatureForCategory(this.expenseCategorySelect.value));
+        }
+        this.updateExpenseBudgetPreview();
+      });
+      [
+        this.expenseAmountInput,
+        this.expenseDateInput,
+        this.expenseIsInstallmentCheckbox,
+        this.expenseInstallmentCount
+      ].forEach(el => {
+        el?.addEventListener('input', () => this.updateExpenseBudgetPreview());
+        el?.addEventListener('change', () => this.updateExpenseBudgetPreview());
+      });
+      this.expenseForm?.querySelectorAll('input[name="installmentAmountType"]').forEach(radio => {
+        radio.addEventListener('change', () => this.updateExpenseBudgetPreview());
+      });
+
+      // Separação Automática de Renda ("Pague-se Primeiro")
+      this.incomeAutoReserveCheck?.addEventListener('change', () => this.updateIncomeAutoReserveUI());
+      [this.incomeInput, this.incomeAutoReservePercentInput].forEach(el => {
+        el?.addEventListener('input', () => this.updateIncomeAutoReserveUI());
+      });
+
+      // Presets de Orçamento (% da Renda)
+      this.budgetPresetBalancedBtn?.addEventListener('click', () => this.applyBalancedBudgetPresets());
+      this.budgetClearAllBtn?.addEventListener('click', () => this.clearBudgetModalInputs());
+
+      // Prioridade no Planejamento de Compras
+      this.planPriorityBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          this.setPlanPriority(btn.getAttribute('data-plan-priority') || 'important');
+        });
+      });
+
+      // Painel Saúde Financeira: Metas, Despesas Anuais & Dívidas
+      this.openGoalsModalBtn?.addEventListener('click', () => this.openGoalsModal());
+      this.goalsForm?.addEventListener('submit', (e) => this.handleGoalsSubmit(e));
+      this.goalModeBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          this.setGoalSaveMode(btn.getAttribute('data-goal-mode') || 'percent');
+        });
+      });
+      this.goalPctPresetBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          this.setGoalSaveMode('percent');
+          if (this.goalSavePercentInput) {
+            this.goalSavePercentInput.value = btn.getAttribute('data-goal-pct') || '20';
+          }
+          this.updateGoalsModalPreviews();
+        });
+      });
+      this.goalMonthsBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          this.setGoalEmergencyMonths(parseInt(btn.getAttribute('data-emergency-months') || '6', 10));
+        });
+      });
+      [this.goalSavePercentInput, this.goalSaveValueInput].forEach(el => {
+        el?.addEventListener('input', () => this.updateGoalsModalPreviews());
+      });
+
+      this.openAnnualModalBtn?.addEventListener('click', () => this.openAnnualExpensesModal());
+      this.annualExpenseForm?.addEventListener('submit', (e) => this.handleAnnualExpenseSubmit(e));
+      this.annualCancelEditBtn?.addEventListener('click', () => this.resetAnnualExpenseForm());
+      this.annualPresetBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (this.annualTitleInput) this.annualTitleInput.value = btn.getAttribute('data-annual-preset') || '';
+          if (this.annualCategorySelect) this.annualCategorySelect.value = btn.getAttribute('data-annual-cat') || 'Outros';
+          if (this.annualDueMonthSelect) this.annualDueMonthSelect.value = btn.getAttribute('data-annual-month') || '1';
+          this.annualAmountInput?.focus();
+        });
+      });
+
+      this.openDebtsModalBtn?.addEventListener('click', () => this.openDebtsModal());
+      this.debtForm?.addEventListener('submit', (e) => this.handleDebtSubmit(e));
+      this.debtCancelEditBtn?.addEventListener('click', () => this.resetDebtForm());
+      this.debtStrategyBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const strategy = btn.getAttribute('data-debt-strategy') === 'snowball' ? 'snowball' : 'avalanche';
+          this.state.debtStrategy = strategy;
+          Storage.save(this.state);
+          this.setDebtStrategyUI(strategy);
+          this.renderDebtsModal();
+        });
+      });
+      this.debtExtraMonthlyInput?.addEventListener('input', () => this.renderDebtStrategyProjection());
+
       // 8. Exportação CSV e Backups
       this.exportCsvBtn?.addEventListener('click', () => this.exportMonthlyCSV());
       this.exportDataBtn?.addEventListener('click', () => this.exportData());
@@ -1566,6 +1976,7 @@
             amount: bill.amount,
             dueDate: nextDueDate,
             category: bill.category,
+            nature: this.getItemNature(bill),
             paid: false,
             ...(bill.financingPlanId ? { financingPlanId: bill.financingPlanId } : {}),
             financingCurrentInstallment: nextInst,
@@ -1581,6 +1992,7 @@
           amount: bill.amount,
           dueDate: nextDueDate,
           category: bill.category,
+          nature: this.getItemNature(bill),
           paid: false,
           createdAt: new Date().toISOString()
         });
@@ -1615,8 +2027,13 @@
 
       this.billTitleInput.value = bill.title;
       this.billAmountInput.value = Utils.formatNumberToInput(bill.amount);
+      if (this.billLateFeeInput) {
+        this.billLateFeeInput.value = Utils.formatNumberToInput(bill.lateFee || 0);
+      }
       this.billDueDateInput.value = bill.dueDate;
       this.billCategorySelect.value = bill.category || 'Moradia';
+      this.billNatureManuallyToggled = true;
+      this.setBillNature(this.getItemNature(bill));
 
       const statusRadio = this.billForm.querySelector(`input[name="billStatus"][value="${bill.paid ? 'paid' : 'pending'}"]`);
       if (statusRadio) statusRadio.checked = true;
@@ -1638,11 +2055,14 @@
       this.expenseDateInput.value = expense.date;
       this.expenseCategorySelect.value = expense.category || 'Alimentação';
       this.expenseMethodSelect.value = expense.method || 'Pix';
+      this.expenseNatureManuallyToggled = true;
+      this.setExpenseNature(this.getItemNature(expense));
 
       if (this.expenseInstallmentContainer) {
         this.expenseInstallmentContainer.classList.add('hidden');
       }
 
+      this.updateExpenseBudgetPreview();
       this.openModal(this.expenseModal);
       this.expenseDescriptionInput.focus();
     },
@@ -1685,6 +2105,13 @@
       if (this.incomeSubmitBtn) {
         this.incomeSubmitBtn.innerHTML = '<i class="fa-solid fa-plus"></i><span>Adicionar Renda</span>';
       }
+      if (this.incomeAutoReserveBox) this.incomeAutoReserveBox.classList.remove('hidden');
+      if (this.incomeAutoReserveCheck) this.incomeAutoReserveCheck.checked = false;
+      const goals = this.state?.financeGoals || { saveGoalMode: 'percent', saveGoalValue: 20 };
+      const defaultPct = goals.saveGoalMode === 'percent' && goals.saveGoalValue > 0 ? goals.saveGoalValue : 10;
+      if (this.incomeAutoReservePercentInput) this.incomeAutoReservePercentInput.value = String(defaultPct);
+      this.populateIncomeAutoReserveSelect();
+      this.updateIncomeAutoReserveUI();
     },
 
     openEditIncomeModal(incomeId) {
@@ -1696,6 +2123,8 @@
       if (this.incomeTypeSelect) this.incomeTypeSelect.value = INCOME_TYPE_META[entry.type] ? entry.type : 'Outros';
       if (this.incomeInput) this.incomeInput.value = Utils.formatNumberToInput(entry.amount);
       if (this.incomeDateInput) this.incomeDateInput.value = entry.date || '';
+      if (this.incomeAutoReserveCheck) this.incomeAutoReserveCheck.checked = false;
+      if (this.incomeAutoReserveBox) this.incomeAutoReserveBox.classList.add('hidden');
 
       if (this.incomeFormTitle) this.incomeFormTitle.textContent = 'Editar Fonte de Renda';
       if (this.cancelIncomeEditBtn) this.cancelIncomeEditBtn.classList.remove('hidden');
@@ -1861,15 +2290,35 @@
         });
       }
 
+      let autoReservedMsg = '';
+      if (!editId && this.incomeAutoReserveCheck?.checked) {
+        const pct = Math.min(90, Math.max(0, Utils.parsePercent(this.incomeAutoReservePercentInput?.value || '0')));
+        const saveAmount = Math.round((amount * (pct / 100)) * 100) / 100;
+        if (saveAmount > 0) {
+          const targetId = this.incomeAutoReserveTargetSelect?.value || '__create_emergency__';
+          const moveDate = date || `${targetPeriod}-05`;
+          const resObj = this.depositToReserve(
+            targetId,
+            saveAmount,
+            moveDate,
+            `Pague-se Primeiro (${pct}% de ${title})`,
+            true
+          );
+          if (resObj) {
+            autoReservedMsg = ` • ${Utils.formatCurrency(saveAmount)} separado(s) em "${resObj.title}"`;
+          }
+        }
+      }
+
       Storage.save(this.state);
       this.resetIncomeForm();
       this.render();
       this.renderIncomeModal();
 
       if (targetPeriod !== this.state.currentPeriod) {
-        Toast.show(`Renda "${title}" salva em ${Utils.formatPeriod(targetPeriod)}!`, 'success');
+        Toast.show(`Renda "${title}" salva em ${Utils.formatPeriod(targetPeriod)}${autoReservedMsg}!`, 'success');
       } else {
-        Toast.show(`Renda "${title}" ${editId ? 'atualizada' : 'adicionada'} com sucesso!`, 'success');
+        Toast.show(`Renda "${title}" ${editId ? 'atualizada' : 'adicionada'} com sucesso${autoReservedMsg}!`, 'success');
       }
     },
 
@@ -1941,8 +2390,13 @@
       const editId = this.billEditId.value;
       const title = this.billTitleInput.value.trim();
       const amount = Utils.parseCurrency(this.billAmountInput.value);
+      const lateFee = Math.max(0, Math.round(Utils.parseCurrency(this.billLateFeeInput?.value || '0') * 100) / 100);
       const dueDate = this.billDueDateInput.value;
       const category = this.billCategorySelect.value;
+      const rawNature = this.billNatureInput?.value;
+      const nature = (rawNature === 'essential' || rawNature === 'superfluous')
+        ? rawNature
+        : this.getDefaultNatureForCategory(category);
       const isPaid = this.billForm.querySelector('input[name="billStatus"]:checked')?.value === 'paid';
 
       if (!title) {
@@ -1962,15 +2416,22 @@
         // Modo Edição
         const billIndex = this.state.bills.findIndex(b => b.id === editId);
         if (billIndex !== -1) {
-          this.state.bills[billIndex] = {
+          const updatedBill = {
             ...this.state.bills[billIndex],
             title,
             amount,
             dueDate,
             category,
+            nature,
             paid: isPaid,
             updatedAt: new Date().toISOString()
           };
+          if (lateFee > 0) {
+            updatedBill.lateFee = lateFee;
+          } else {
+            delete updatedBill.lateFee;
+          }
+          this.state.bills[billIndex] = updatedBill;
           Toast.show(`Conta "${title}" atualizada com sucesso!`, 'success');
         }
       } else {
@@ -1981,6 +2442,8 @@
           amount,
           dueDate,
           category,
+          nature,
+          ...(lateFee > 0 ? { lateFee } : {}),
           paid: isPaid,
           createdAt: new Date().toISOString()
         };
@@ -1993,9 +2456,12 @@
       this.render();
     },
 
-    buildInstallmentExpenses({ description, amount, amountType = 'total', count, startDateISO, category, method }) {
+    buildInstallmentExpenses({ description, amount, amountType = 'total', count, startDateISO, category, method, nature = null }) {
       const safeCount = Math.max(1, parseInt(count, 10) || 1);
       const baseAmount = Math.round((Number(amount) || 0) * 100) / 100;
+      const resolvedNature = (nature === 'essential' || nature === 'superfluous')
+        ? nature
+        : this.getDefaultNatureForCategory(category);
 
       let amountPerInstallment = baseAmount;
       let diff = 0;
@@ -2028,6 +2494,7 @@
           date: targetDateISO,
           category,
           method,
+          nature: resolvedNature,
           ...(safeCount > 1 ? {
             installmentGroupId: groupId,
             installmentNumber: i + 1,
@@ -2048,6 +2515,10 @@
       const date = this.expenseDateInput.value;
       const category = this.expenseCategorySelect.value;
       const method = this.expenseMethodSelect.value;
+      const rawNature = this.expenseNatureInput?.value;
+      const nature = (rawNature === 'essential' || rawNature === 'superfluous')
+        ? rawNature
+        : this.getDefaultNatureForCategory(category);
 
       if (!description) {
         Toast.show('Informe a descrição do gasto.', 'warning');
@@ -2073,6 +2544,7 @@
             date,
             category,
             method,
+            nature,
             updatedAt: new Date().toISOString()
           };
           Toast.show(`Lançamento "${description}" atualizado!`, 'success');
@@ -2089,7 +2561,8 @@
           count,
           startDateISO: date,
           category,
-          method
+          method,
+          nature
         });
 
         this.state.expenses.unshift(...newInstallments);
@@ -2103,6 +2576,7 @@
           date,
           category,
           method,
+          nature,
           createdAt: new Date().toISOString()
         };
         this.state.expenses.unshift(newExpense);
@@ -2278,6 +2752,45 @@
           });
         }
 
+        csv += '\r\n';
+
+        // Resumo dos 7 Pilares & Despesas Anuais
+        const livingMetrics = this.getLivingCostMetrics(period);
+        const emergencyMetrics = this.getEmergencyReserveMetrics(period);
+        const annualMetrics = this.getAnnualExpensesMetrics();
+        csv += 'SAÚDE FINANCEIRA E PROVISÕES ANUAIS\r\n';
+        csv += `Custo de Vida Fixo;${Utils.formatCurrency(livingMetrics.livingCost)}\r\n`;
+        csv += `Reserva de Emergência;${Utils.formatCurrency(emergencyMetrics.emergencyBalance)} (${emergencyMetrics.monthsCovered} meses de ${emergencyMetrics.targetMonths} meses)\r\n`;
+        csv += `Provisão Anual Mensal (/12);${Utils.formatCurrency(annualMetrics.monthlyProvision)}\r\n\r\n`;
+
+        csv += 'DESPESAS ANUAIS CADASTRADAS\r\n';
+        csv += 'Descrição;Categoria;Mês Vencimento;Valor Anual (R$);Provisão Mensal (R$)\r\n';
+        if (annualMetrics.items.length === 0) {
+          csv += 'Nenhuma despesa anual cadastrada;;;;\r\n';
+        } else {
+          annualMetrics.items.forEach(item => {
+            const anualStr = item.amount.toFixed(2).replace('.', ',');
+            const provStr = (item.amount / 12).toFixed(2).replace('.', ',');
+            csv += `"${item.title.replace(/"/g, '""')}";"${item.category}";"${MONTH_NAMES_PT[(item.dueMonth || 1) - 1]}";${anualStr};${provStr}\r\n`;
+          });
+        }
+        csv += '\r\n';
+
+        // Dívidas Ativas
+        const activeDebts = (this.state.debts || []).filter(d => !d.paidOff && d.totalBalance > 0);
+        csv += 'PAINEL DE DÍVIDAS ATIVAS\r\n';
+        csv += 'Descrição;Credor;Saldo Devedor (R$);Parcela Mensal (R$);Juros (% a.m.)\r\n';
+        if (activeDebts.length === 0) {
+          csv += 'Nenhuma dívida ativa;;;;\r\n';
+        } else {
+          activeDebts.forEach(d => {
+            const balStr = d.totalBalance.toFixed(2).replace('.', ',');
+            const pmtStr = d.monthlyPayment.toFixed(2).replace('.', ',');
+            const rateStr = d.interestRatePct.toFixed(2).replace('.', ',');
+            csv += `"${d.title.replace(/"/g, '""')}";"${(d.creditor || '').replace(/"/g, '""')}";${balStr};${pmtStr};${rateStr}\r\n`;
+          });
+        }
+
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -2352,10 +2865,14 @@
             version: 2,
             currentPeriod: importedPeriod,
             incomeEntries: Storage.normalizeIncomeEntries({ ...parsed, currentPeriod: importedPeriod }),
-            budgets: (parsed.budgets && typeof parsed.budgets === 'object') ? parsed.budgets : {},
+            budgets: Storage.normalizeBudgets(parsed.budgets),
+            financeGoals: Storage.normalizeFinanceGoals(parsed.financeGoals),
+            annualExpenses: Storage.normalizeAnnualExpenses(parsed.annualExpenses),
+            debts: Storage.normalizeDebts(parsed.debts),
+            debtStrategy: parsed.debtStrategy === 'snowball' ? 'snowball' : 'avalanche',
             alertSettings: Utils.normalizeAlertSettings(parsed.alertSettings),
-            bills: Array.isArray(parsed.bills) ? parsed.bills : [],
-            expenses: Array.isArray(parsed.expenses) ? parsed.expenses : [],
+            bills: (Array.isArray(parsed.bills) ? parsed.bills : []).map(b => Storage.normalizeBillRecord(b)).filter(Boolean),
+            expenses: (Array.isArray(parsed.expenses) ? parsed.expenses : []).map(e => Storage.normalizeExpenseRecord(e)).filter(Boolean),
             plans: Storage.normalizePlans(parsed.plans),
             reserves: Storage.normalizeReserves(parsed.reserves)
           };
@@ -2382,6 +2899,7 @@
       this.renderDueAlerts();
       this.renderKPIs();
       this.renderBurnRate();
+      this.renderFinancialHealthPanel();
       this.checkPreviousMonthBills();
       this.renderBills();
       this.renderExpenses();
@@ -2578,8 +3096,84 @@
     },
 
     // ========================================================================
-    // RENDERIZAÇÃO DOS TETOS DE GASTOS (BUDGETING)
+    // RENDERIZAÇÃO DOS TETOS DE GASTOS (BUDGETING: R$ FIXO OU % DA RENDA)
     // ========================================================================
+    getBudgetConfig(category, period = this.state.currentPeriod) {
+      const raw = (this.state.budgets || {})[category];
+      if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) {
+        return { mode: 'fixed', value: raw, limit: Math.round(raw * 100) / 100 };
+      }
+      if (raw && typeof raw === 'object' && raw.mode === 'percent') {
+        const pct = Number(raw.value);
+        if (Number.isFinite(pct) && pct > 0) {
+          const income = this.getCurrentIncome(period);
+          const limit = Math.round((income * (pct / 100)) * 100) / 100;
+          return { mode: 'percent', value: pct, limit };
+        }
+      }
+      return { mode: 'fixed', value: 0, limit: 0 };
+    },
+
+    getCategoryBudgetLimit(category, period = this.state.currentPeriod) {
+      return this.getBudgetConfig(category, period).limit;
+    },
+
+    updateExpenseBudgetPreview() {
+      if (!this.expenseBudgetPreview) return;
+      const cat = this.expenseCategorySelect?.value || 'Alimentação';
+      const dateISO = this.expenseDateInput?.value || Utils.getTodayISO();
+      const targetPeriod = /^\d{4}-\d{2}/.test(dateISO) ? dateISO.slice(0, 7) : this.state.currentPeriod;
+      const cfg = this.getBudgetConfig(cat, targetPeriod);
+      const limit = cfg.limit;
+
+      if (limit <= 0) {
+        this.expenseBudgetPreview.classList.add('hidden');
+        this.expenseBudgetPreview.innerHTML = '';
+        return;
+      }
+
+      const rawAmount = Utils.parseCurrency(this.expenseAmountInput?.value || '0');
+      const editId = this.expenseEditId?.value || '';
+      const isInstallment = !editId && Boolean(this.expenseIsInstallmentCheckbox?.checked);
+      let addedImpact = rawAmount;
+      if (isInstallment && rawAmount > 0) {
+        const count = Math.max(1, parseInt(this.expenseInstallmentCount?.value || '2', 10));
+        const instType = this.expenseForm?.querySelector('input[name="installmentAmountType"]:checked')?.value || 'per_installment';
+        addedImpact = instType === 'total' ? (rawAmount / count) : rawAmount;
+      }
+
+      let existingOtherSpent = [
+        ...this.state.expenses.filter(e => e.id !== editId && (e.date || '').startsWith(targetPeriod) && (e.category || 'Outros') === cat),
+        ...this.state.bills.filter(b => (b.dueDate || '').startsWith(targetPeriod) && (b.category || 'Outros') === cat)
+      ].reduce((sum, item) => sum + (item.amount || 0), 0);
+
+      existingOtherSpent = Math.round(existingOtherSpent * 100) / 100;
+      const projectedTotal = Math.round((existingOtherSpent + addedImpact) * 100) / 100;
+      const pct = Math.round((projectedTotal / limit) * 100);
+      const remainingBefore = Math.round((limit - existingOtherSpent) * 100) / 100;
+
+      this.expenseBudgetPreview.classList.remove('hidden');
+      if (pct >= 100) {
+        this.expenseBudgetPreview.className = 'p-2.5 rounded-xl border border-rose-500/35 bg-rose-500/10 text-rose-200 text-[11px] flex items-center gap-2';
+        this.expenseBudgetPreview.innerHTML = `
+          <i class="fa-solid fa-triangle-exclamation text-rose-400 flex-shrink-0"></i>
+          <span>Teto de <strong>${Utils.escapeHTML(cat)}</strong> (${Utils.formatCurrency(limit)}): ficará em <strong>${Utils.formatCurrency(projectedTotal)}</strong> (${pct}% — acima em ${Utils.formatCurrency(projectedTotal - limit)}).</span>
+        `;
+      } else if (pct >= 80) {
+        this.expenseBudgetPreview.className = 'p-2.5 rounded-xl border border-amber-500/35 bg-amber-500/10 text-amber-200 text-[11px] flex items-center gap-2';
+        this.expenseBudgetPreview.innerHTML = `
+          <i class="fa-solid fa-bullseye text-amber-400 flex-shrink-0"></i>
+          <span>Atenção no teto de <strong>${Utils.escapeHTML(cat)}</strong>: atingirá <strong>${pct}%</strong> (${Utils.formatCurrency(projectedTotal)} de ${Utils.formatCurrency(limit)}).</span>
+        `;
+      } else {
+        this.expenseBudgetPreview.className = 'p-2.5 rounded-xl border border-slate-700/70 bg-slate-900/70 text-slate-300 text-[11px] flex items-center gap-2';
+        this.expenseBudgetPreview.innerHTML = `
+          <i class="fa-solid fa-circle-check text-emerald-400 flex-shrink-0"></i>
+          <span>Saldo livre em <strong>${Utils.escapeHTML(cat)}</strong>: ${Utils.formatCurrency(Math.max(0, remainingBefore))} de ${Utils.formatCurrency(limit)} (ficará em ${pct}%).</span>
+        `;
+      }
+    },
+
     renderBudgets() {
       if (!this.budgetBreakdownList) return;
 
@@ -2587,7 +3181,10 @@
       const periodExpenses = this.state.expenses.filter(e => e.date.startsWith(period));
       const budgets = this.state.budgets || {};
 
-      const categoriesWithBudget = Object.keys(budgets).filter(cat => budgets[cat] > 0);
+      const categoriesWithBudget = Object.keys(budgets).filter(cat => {
+        const cfg = this.getBudgetConfig(cat, period);
+        return cfg.value > 0;
+      });
 
       if (categoriesWithBudget.length === 0) {
         this.budgetBreakdownList.innerHTML = `
@@ -2612,9 +3209,10 @@
 
       let html = '';
       categoriesWithBudget.forEach(cat => {
-        const limit = budgets[cat];
+        const cfg = this.getBudgetConfig(cat, period);
+        const limit = cfg.limit;
         const spent = spentByCategory[cat] || 0;
-        const percent = Math.round((spent / limit) * 100);
+        const percent = limit > 0 ? Math.round((spent / limit) * 100) : (spent > 0 ? 100 : 0);
         const icon = CATEGORY_ICONS[cat] || 'fa-tags';
         const color = CATEGORY_COLORS[cat] || '#64748b';
 
@@ -2622,7 +3220,11 @@
         let statusText = `${percent}%`;
         let barColor = color;
 
-        if (percent >= 100) {
+        if (limit <= 0 && cfg.mode === 'percent') {
+          statusClass = 'status-pill-soon';
+          statusText = 'Sem renda no mês';
+          barColor = '#64748b';
+        } else if (percent >= 100) {
           statusClass = 'status-pill-overdue';
           statusText = `Estourado (+${Utils.formatCurrency(spent - limit)})`;
           barColor = '#f43f5e';
@@ -2633,6 +3235,9 @@
         }
 
         const barWidth = Math.min(100, percent);
+        const limitText = cfg.mode === 'percent'
+          ? `${cfg.value}% (${Utils.formatCurrency(limit)})`
+          : Utils.formatCurrency(limit);
 
         html += `
           <div class="p-3 bg-slate-900/60 rounded-xl border border-slate-700/50 space-y-2">
@@ -2648,7 +3253,7 @@
 
             <div class="flex items-center justify-between text-[11px] text-slate-400">
               <span>Gasto: <strong class="text-slate-200">${Utils.formatCurrency(spent)}</strong></span>
-              <span>Teto: ${Utils.formatCurrency(limit)}</span>
+              <span>Teto: ${limitText}</span>
             </div>
 
             <div class="w-full h-1.5 bg-slate-700/60 rounded-full overflow-hidden">
@@ -2661,6 +3266,116 @@
       this.budgetBreakdownList.innerHTML = html;
     },
 
+    buildBudgetRowControls(cat, mode, rawVal) {
+      const icon = CATEGORY_ICONS[cat] || 'fa-tags';
+      const color = CATEGORY_COLORS[cat] || '#64748b';
+      const income = this.getCurrentIncome(this.state.currentPeriod);
+      const isPercent = mode === 'percent';
+      const displayVal = isPercent
+        ? (rawVal > 0 ? String(rawVal) : '')
+        : (rawVal > 0 ? Utils.formatNumberToInput(rawVal) : '0,00');
+      const convertedBrl = isPercent && rawVal > 0
+        ? `= ${Utils.formatCurrency(income * (rawVal / 100))}/mês`
+        : '';
+
+      return `
+        <div class="flex flex-wrap items-center justify-between gap-2.5 p-2.5 bg-slate-900/60 border border-slate-700/60 rounded-xl" data-budget-row="${cat}">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <div class="w-7 h-7 rounded-lg flex items-center justify-center text-xs flex-shrink-0" style="background-color: ${color}20; color: ${color};">
+              <i class="fa-solid ${icon}"></i>
+            </div>
+            <div class="min-w-0">
+              <label for="budget_${cat}" class="text-xs font-semibold text-slate-200 truncate cursor-pointer block">${Utils.escapeHTML(cat)}</label>
+              <span class="budget-row-preview text-[10px] text-amber-300/90 block">${convertedBrl}</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <div class="inline-flex bg-slate-950 border border-slate-700 rounded-lg p-0.5 text-[10px] font-semibold">
+              <button type="button" data-budget-mode-btn="${cat}" data-mode="fixed" class="px-2 py-1 rounded ${!isPercent ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'} transition-colors">R$</button>
+              <button type="button" data-budget-mode-btn="${cat}" data-mode="percent" class="px-2 py-1 rounded ${isPercent ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'} transition-colors">%</button>
+            </div>
+            <input type="hidden" data-budget-mode-input="${cat}" value="${mode}" />
+            <div class="relative w-32">
+              <span class="budget-unit-prefix absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-semibold">${isPercent ? '%' : 'R$'}</span>
+              <input type="text" id="budget_${cat}" data-category-budget="${cat}" inputmode="decimal" value="${displayVal}" placeholder="${isPercent ? '0' : '0,00'}" class="budget-input ${isPercent ? '' : 'money-input'} w-full pl-8 pr-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-slate-100 text-xs font-semibold text-right focus:border-amber-500 transition-colors" />
+            </div>
+          </div>
+        </div>
+      `;
+    },
+
+    updateBudgetModalRowPreview(cat) {
+      const row = this.budgetInputsContainer?.querySelector(`[data-budget-row="${cat}"]`);
+      if (!row) return;
+      const modeInput = row.querySelector(`[data-budget-mode-input="${cat}"]`);
+      const valueInput = row.querySelector(`[data-category-budget="${cat}"]`);
+      const previewEl = row.querySelector('.budget-row-preview');
+      if (!modeInput || !valueInput || !previewEl) return;
+
+      if (modeInput.value === 'percent') {
+        const pct = Utils.parsePercent(valueInput.value || '0');
+        const income = this.getCurrentIncome(this.state.currentPeriod);
+        previewEl.textContent = pct > 0 ? `= ${Utils.formatCurrency(income * (pct / 100))}/mês` : '';
+      } else {
+        previewEl.textContent = '';
+      }
+    },
+
+    setBudgetRowMode(cat, newMode) {
+      const row = this.budgetInputsContainer?.querySelector(`[data-budget-row="${cat}"]`);
+      if (!row) return;
+      const modeInput = row.querySelector(`[data-budget-mode-input="${cat}"]`);
+      const prefixEl = row.querySelector('.budget-unit-prefix');
+      const valueInput = row.querySelector(`[data-category-budget="${cat}"]`);
+      if (!modeInput || !valueInput) return;
+
+      const normalized = newMode === 'percent' ? 'percent' : 'fixed';
+      const oldMode = modeInput.value;
+      if (oldMode !== normalized) {
+        const income = this.getCurrentIncome(this.state.currentPeriod);
+        if (normalized === 'percent') {
+          const brl = Utils.parseCurrency(valueInput.value || '0');
+          const pct = income > 0 && brl > 0 ? Math.min(100, Math.round((brl / income) * 1000) / 10) : 0;
+          valueInput.value = pct > 0 ? String(pct) : '';
+        } else {
+          const pct = Utils.parsePercent(valueInput.value || '0');
+          const brl = income > 0 && pct > 0 ? Math.round((income * (pct / 100)) * 100) / 100 : 0;
+          valueInput.value = Utils.formatNumberToInput(brl);
+        }
+      }
+
+      modeInput.value = normalized;
+      if (prefixEl) prefixEl.textContent = normalized === 'percent' ? '%' : 'R$';
+      valueInput.placeholder = normalized === 'percent' ? '0' : '0,00';
+
+      row.querySelectorAll(`[data-budget-mode-btn="${cat}"]`).forEach(btn => {
+        const active = btn.getAttribute('data-mode') === normalized;
+        btn.classList.toggle('bg-amber-600', active);
+        btn.classList.toggle('text-white', active);
+        btn.classList.toggle('text-slate-400', !active);
+      });
+      this.updateBudgetModalRowPreview(cat);
+    },
+
+    applyBalancedBudgetPresets() {
+      Object.entries(BALANCED_BUDGET_PRESET_PERCENTS).forEach(([cat, pct]) => {
+        this.setBudgetRowMode(cat, 'percent');
+        const input = this.budgetInputsContainer?.querySelector(`[data-category-budget="${cat}"]`);
+        if (input) input.value = String(pct);
+        this.updateBudgetModalRowPreview(cat);
+      });
+      Toast.show('Sugestão aplicada: Alimentação 15%, Transporte 10%, Lazer 10%, Compras 5%.', 'info', 3000);
+    },
+
+    clearBudgetModalInputs() {
+      this.budgetInputsContainer?.querySelectorAll('[data-category-budget]').forEach(input => {
+        const cat = input.getAttribute('data-category-budget');
+        const modeInput = this.budgetInputsContainer?.querySelector(`[data-budget-mode-input="${cat}"]`);
+        input.value = modeInput?.value === 'percent' ? '' : '0,00';
+        this.updateBudgetModalRowPreview(cat);
+      });
+    },
+
     openBudgetModal() {
       if (!this.budgetInputsContainer) return;
 
@@ -2668,35 +3383,32 @@
         'Alimentação', 'Transporte', 'Moradia', 'Lazer',
         'Saúde', 'Educação', 'Compras', 'Serviços', 'Assinaturas', 'Outros'
       ];
-      const budgets = this.state.budgets || {};
 
       let html = '';
       categories.forEach(cat => {
-        const icon = CATEGORY_ICONS[cat] || 'fa-tags';
-        const color = CATEGORY_COLORS[cat] || '#64748b';
-        const val = budgets[cat] || 0;
-        const formatted = val > 0 ? Utils.formatNumberToInput(val) : '0,00';
-
-        html += `
-          <div class="flex items-center justify-between gap-3 p-2.5 bg-slate-900/60 border border-slate-700/60 rounded-xl">
-            <div class="flex items-center gap-2.5 min-w-0">
-              <div class="w-7 h-7 rounded-lg flex items-center justify-center text-xs flex-shrink-0" style="background-color: ${color}20; color: ${color};">
-                <i class="fa-solid ${icon}"></i>
-              </div>
-              <label for="budget_${cat}" class="text-xs font-semibold text-slate-200 truncate cursor-pointer">${Utils.escapeHTML(cat)}</label>
-            </div>
-            <div class="relative w-36">
-              <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-semibold">R$</span>
-              <input type="text" id="budget_${cat}" data-category-budget="${cat}" inputmode="numeric" value="${formatted}" class="budget-input money-input w-full pl-8 pr-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-slate-100 text-xs font-semibold text-right focus:border-amber-500 transition-colors" />
-            </div>
-          </div>
-        `;
+        const cfg = this.getBudgetConfig(cat, this.state.currentPeriod);
+        html += this.buildBudgetRowControls(cat, cfg.mode, cfg.value);
       });
 
       this.budgetInputsContainer.innerHTML = html;
 
+      this.budgetInputsContainer.querySelectorAll('[data-budget-mode-btn]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          this.setBudgetRowMode(btn.getAttribute('data-budget-mode-btn'), btn.getAttribute('data-mode'));
+        });
+      });
+
       this.budgetInputsContainer.querySelectorAll('.budget-input').forEach(input => {
-        Utils.attachCurrencyMask(input);
+        const cat = input.getAttribute('data-category-budget');
+        input.addEventListener('input', () => {
+          const modeInput = this.budgetInputsContainer?.querySelector(`[data-budget-mode-input="${cat}"]`);
+          if (modeInput?.value === 'fixed') {
+            const digits = input.value.replace(/\D/g, '');
+            const cents = parseInt(digits || '0', 10) || 0;
+            input.value = (cents / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          }
+          this.updateBudgetModalRowPreview(cat);
+        });
       });
 
       this.openModal(this.budgetModal);
@@ -2709,9 +3421,18 @@
 
       inputs.forEach(input => {
         const cat = input.getAttribute('data-category-budget');
-        const amount = Utils.parseCurrency(input.value);
-        if (amount > 0) {
-          updatedBudgets[cat] = amount;
+        const modeInput = this.budgetInputsContainer.querySelector(`[data-budget-mode-input="${cat}"]`);
+        const mode = modeInput?.value === 'percent' ? 'percent' : 'fixed';
+        if (mode === 'percent') {
+          const pct = Math.min(100, Math.max(0, Utils.parsePercent(input.value)));
+          if (pct > 0) {
+            updatedBudgets[cat] = { mode: 'percent', value: Math.round(pct * 100) / 100 };
+          }
+        } else {
+          const amount = Utils.parseCurrency(input.value);
+          if (amount > 0) {
+            updatedBudgets[cat] = amount;
+          }
         }
       });
 
@@ -2822,7 +3543,7 @@
     },
 
     getPlanCategoryUsage(category, period) {
-      const budgetLimit = Number((this.state.budgets || {})[category]) || 0;
+      const budgetLimit = this.getCategoryBudgetLimit(category, period);
       const currentSpent = [
         ...this.state.expenses.filter(e => (e.date || '').startsWith(period) && (e.category || 'Outros') === category),
         ...this.state.bills.filter(b => (b.dueDate || '').startsWith(period) && (b.category || 'Outros') === category)
@@ -3976,12 +4697,15 @@
     applyReserveToPlan() {
       const source = this.planReserveSourceSelect?.value || '__all__';
       let available = 0;
+      let includesEmergency = false;
 
       if (source === '__all__') {
         available = this.getTotalReservesBalance();
+        includesEmergency = (this.state.reserves || []).some(r => r.type === 'Reserva de Emergência' && (r.balance || 0) > 0);
       } else {
         const reserve = (this.state.reserves || []).find(r => r.id === source);
         available = reserve ? (reserve.balance || 0) : 0;
+        includesEmergency = reserve?.type === 'Reserva de Emergência';
       }
 
       if (available <= 0) {
@@ -3997,7 +4721,26 @@
       }
       this.setPlanDownPaymentSource('saved', false);
       this.updatePlanSimulationPreview();
-      Toast.show(`Valor de ${Utils.formatCurrency(applied)} aplicado como entrada já guardada.`, 'success');
+      if (includesEmergency) {
+        Toast.show(`Entrada de ${Utils.formatCurrency(applied)} aplicada. Atenção: envolve sua Reserva de Emergência — use apenas se for necessário.`, 'warning', 4500);
+      } else {
+        Toast.show(`Valor de ${Utils.formatCurrency(applied)} aplicado como entrada já guardada.`, 'success');
+      }
+    },
+
+    setPlanPriority(priority) {
+      const normalized = PLAN_PRIORITY_META[priority] ? priority : 'important';
+      if (this.planPriorityInput) this.planPriorityInput.value = normalized;
+      this.planPriorityBtns.forEach(btn => {
+        const isActive = btn.getAttribute('data-plan-priority') === normalized;
+        if (isActive) {
+          btn.classList.add('bg-indigo-600', 'text-white', 'shadow-sm');
+          btn.classList.remove('text-slate-400', 'hover:text-white');
+        } else {
+          btn.classList.remove('bg-indigo-600', 'text-white', 'shadow-sm');
+          btn.classList.add('text-slate-400', 'hover:text-white');
+        }
+      });
     },
 
     resetPlanningForm() {
@@ -4009,6 +4752,7 @@
         this.planningSubmitBtn.innerHTML = '<i class="fa-solid fa-bookmark"></i><span>Salvar Planejamento</span>';
       }
       if (this.planCategorySelect) this.planCategorySelect.value = 'Compras';
+      this.setPlanPriority('important');
       if (this.planTargetAmountInput) this.planTargetAmountInput.value = '0,00';
       if (this.planSavedAmountInput) this.planSavedAmountInput.value = '0,00';
       if (this.planInstallmentsSelect) this.planInstallmentsSelect.value = '10';
@@ -4082,6 +4826,7 @@
         this.planFirstInstallmentOffsetSelect.value = String(this.getPlanFirstInstallmentOffset(plan));
       }
 
+      this.setPlanPriority(plan.priority || 'important');
       this.setPlanDownPaymentSource(plan.downPaymentSource || 'saved', false);
       this.setPlanFinancingCalcBy(plan.financingCalcBy || 'rate', false);
       this.setPlanMode(plan.mode, false);
@@ -4229,6 +4974,7 @@
         id: this.planEditId?.value || '',
         title: (this.planTitleInput?.value || '').trim(),
         category: this.planCategorySelect?.value || 'Compras',
+        priority: PLAN_PRIORITY_META[this.planPriorityInput?.value] ? this.planPriorityInput.value : 'important',
         mode,
         targetAmount: Utils.parseCurrency(this.planTargetAmountInput?.value || '0'),
         savedAmount: Utils.parseCurrency(this.planSavedAmountInput?.value || '0'),
@@ -4472,11 +5218,31 @@
 
       const plans = [...(this.state.plans || [])].sort((a, b) => {
         if (a.status !== b.status) return a.status === 'active' ? -1 : 1;
-        return 0;
+        const rA = (PLAN_PRIORITY_META[a.priority] || PLAN_PRIORITY_META.important).rank;
+        const rB = (PLAN_PRIORITY_META[b.priority] || PLAN_PRIORITY_META.important).rank;
+        return rA - rB;
       });
 
       if (this.plansCountBadge) {
         this.plansCountBadge.textContent = `${plans.length} ${plans.length === 1 ? 'plano' : 'planos'}`;
+      }
+
+      const activePlans = plans.filter(p => p.status === 'active');
+      if (this.plansPriorityInsight) {
+        if (activePlans.length >= 2) {
+          const hasEssentialOrImportant = activePlans.some(p => (p.priority || 'important') !== 'desire');
+          const desirePlans = activePlans.filter(p => p.priority === 'desire');
+          const sumAllActive = activePlans.reduce((s, p) => s + (p.targetAmount || 0), 0);
+          const freeMonth = this.getMonthBaseline(this.state.currentPeriod).balanceBefore;
+          this.plansPriorityInsight.classList.remove('hidden');
+          if (hasEssentialOrImportant && desirePlans.length > 0) {
+            this.plansPriorityInsight.innerHTML = `<i class="fa-solid fa-scale-balanced text-indigo-400 mr-1.5"></i><strong>Priorização:</strong> Você tem ${activePlans.length} planos ativos (${Utils.formatCurrency(sumAllActive)}). Ordene executando primeiro os itens <strong>Essenciais / Importantes</strong> antes dos <strong>Desejos</strong> (folga atual do mês: ${Utils.formatCurrency(freeMonth)}).`;
+          } else {
+            this.plansPriorityInsight.innerHTML = `<i class="fa-solid fa-compass text-indigo-400 mr-1.5"></i>Comparativo: ${activePlans.length} planos ativos somando <strong>${Utils.formatCurrency(sumAllActive)}</strong> no total.`;
+          }
+        } else {
+          this.plansPriorityInsight.classList.add('hidden');
+        }
       }
 
       if (plans.length === 0) {
@@ -4497,6 +5263,7 @@
         const isCompleted = plan.status === 'completed';
         const ev = isCompleted ? null : this.evaluatePlan(plan);
         const statusMeta = isCompleted ? this.getPlanStatusMeta('completed') : ev.statusMeta;
+        const prioMeta = PLAN_PRIORITY_META[plan.priority] || PLAN_PRIORITY_META.important;
         const modeBadge = plan.mode === 'save'
           ? 'Juntar/mês'
           : (plan.mode === 'financing'
@@ -4582,6 +5349,7 @@
                   <div class="flex items-center gap-2 flex-wrap">
                     <span class="font-bold text-slate-100 text-xs truncate">${Utils.escapeHTML(plan.title)}</span>
                     <span class="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-800 text-slate-300 border border-slate-700">${modeBadge}</span>
+                    <span class="px-1.5 py-0.5 rounded-full text-[10px] font-semibold border ${prioMeta.badgeClass}"><i class="fa-solid ${prioMeta.icon} text-[9px] mr-1"></i>${prioMeta.label}</span>
                   </div>
                   <div class="text-[11px] text-slate-400 mt-0.5">
                     ${subtitleLine}
@@ -4747,6 +5515,10 @@
         confirmMsg = `Marcar "${plan.title}" como concluído? Como o valor já está 100% coberto pela entrada/reserva, nenhum gasto mensal adicional será lançado.`;
       }
 
+      if (plan.priority === 'desire') {
+        confirmMsg += ' ⚠️ Este plano está classificado como "Desejo": confirme se caberá sem comprometer seus gastos essenciais e metas.';
+      }
+
       const confirmed = await ConfirmDialog.open({
         title: 'Efetivar Compra Planejada',
         message: confirmMsg,
@@ -4758,6 +5530,9 @@
 
       const startDateISO = this.getEffectivePlanStartDate();
       const firstInstallmentStartDateISO = Utils.shiftDateToPeriod(startDateISO, firstInstallmentPeriod) || startDateISO;
+      const planNature = plan.priority === 'desire'
+        ? 'superfluous'
+        : (plan.priority === 'essential' ? 'essential' : this.getDefaultNatureForCategory(plan.category));
 
       if (plan.mode === 'financing') {
         let feedbackParts = [];
@@ -4769,6 +5544,7 @@
             amount: ev.monthlyImpact,
             dueDate,
             category: plan.category,
+            nature: planNature,
             paid: false,
             financingPlanId: plan.id,
             financingCurrentInstallment: 1,
@@ -4786,6 +5562,7 @@
             date: startDateISO,
             category: plan.category,
             method: 'Pix',
+            nature: planNature,
             createdAt: new Date().toISOString()
           });
           feedbackParts.push(`entrada de ${Utils.formatCurrency(downPaymentMonthImpact)} lançada`);
@@ -4805,7 +5582,8 @@
           count: plan.installments,
           startDateISO: firstInstallmentStartDateISO,
           category: plan.category,
-          method: plan.paymentMethod
+          method: plan.paymentMethod,
+          nature: planNature
         });
         this.state.expenses.unshift(...createdExpenses);
         if (downPaymentMonthImpact > 0) {
@@ -4816,6 +5594,7 @@
             date: startDateISO,
             category: plan.category,
             method: 'Pix',
+            nature: planNature,
             createdAt: new Date().toISOString()
           });
         }
@@ -4834,6 +5613,7 @@
           date: startDateISO,
           category: plan.category,
           method: plan.paymentMethod,
+          nature: planNature,
           createdAt: new Date().toISOString()
         });
         Toast.show(`Compra "${plan.title}" lançada em Gastos Diários!`, 'success');
@@ -5371,13 +6151,18 @@
 
           visibleReserves.forEach(res => {
             const meta = RESERVE_TYPE_META[res.type] || RESERVE_TYPE_META['Outros'];
-            const hasGoal = (res.goalAmount || 0) > 0;
-            const percent = hasGoal ? Math.min(100, Math.round(((res.balance || 0) / res.goalAmount) * 100)) : 0;
+            const emergMetrics = res.type === 'Reserva de Emergência' ? this.getEmergencyReserveMetrics() : null;
+            const effectiveGoal = (res.goalAmount || 0) > 0
+              ? res.goalAmount
+              : (emergMetrics && emergMetrics.suggestedTargetAmount > 0 ? emergMetrics.suggestedTargetAmount : 0);
+            const hasGoal = effectiveGoal > 0;
+            const percent = hasGoal ? Math.min(100, Math.round(((res.balance || 0) / effectiveGoal) * 100)) : 0;
+            const goalPrefix = (res.goalAmount || 0) <= 0 && emergMetrics ? `Meta sugerida (${emergMetrics.targetMonths}m)` : 'Meta';
 
             const goalHtml = hasGoal ? `
               <div class="space-y-1">
                 <div class="flex items-center justify-between text-[10px] text-slate-400">
-                  <span>Meta: ${Utils.formatCurrency(res.goalAmount)}</span>
+                  <span>${goalPrefix}: ${Utils.formatCurrency(effectiveGoal)}</span>
                   <span class="font-semibold text-teal-300">${percent}%</span>
                 </div>
                 <div class="w-full h-1.5 bg-slate-700/60 rounded-full overflow-hidden">
@@ -5457,6 +6242,27 @@
         this.reservesCountBadge.textContent = `${reserves.length} ${reserves.length === 1 ? 'caixinha' : 'caixinhas'}`;
       }
 
+      if (this.reservesEmergencyBanner) {
+        const em = this.getEmergencyReserveMetrics();
+        this.reservesEmergencyBanner.classList.remove('hidden');
+        if (em.monthlyBase <= 0) {
+          this.reservesEmergencyBanner.className = 'p-3 rounded-xl border border-slate-700/70 bg-slate-900/70 text-xs text-slate-300 flex flex-wrap items-center justify-between gap-2';
+          this.reservesEmergencyBanner.innerHTML = `<span><i class="fa-solid fa-shield-halved text-teal-400 mr-1.5"></i>Cadastre suas contas fixas para calcularmos sua meta automática de <strong>${em.targetMonths} meses</strong> na Reserva de Emergência.</span>`;
+        } else {
+          const isCovered = em.coveragePct >= 100;
+          this.reservesEmergencyBanner.className = isCovered
+            ? 'p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-200 flex flex-wrap items-center justify-between gap-2'
+            : 'p-3 rounded-xl border border-teal-500/30 bg-teal-500/10 text-xs text-teal-200 flex flex-wrap items-center justify-between gap-2';
+          this.reservesEmergencyBanner.innerHTML = `
+            <div>
+              <strong><i class="fa-solid fa-shield-halved mr-1.5"></i>Reserva de Emergência (${em.monthsCovered} / ${em.targetMonths} meses):</strong>
+              ${Utils.formatCurrency(em.emergencyBalance)} guardados de ${Utils.formatCurrency(em.suggestedTargetAmount)} sugeridos (base custo de vida ${Utils.formatCurrency(em.monthlyBase)}/mês).
+            </div>
+            <span class="px-2 py-0.5 rounded-full bg-slate-900/70 border border-teal-500/30 font-bold text-[11px]">${em.coveragePct}%</span>
+          `;
+        }
+      }
+
       if (reserves.length === 0) {
         this.reservesListContainer.innerHTML = `
           <div class="text-center py-6 px-4 rounded-xl bg-slate-900/40 border border-slate-800 text-slate-400 space-y-1.5">
@@ -5474,18 +6280,25 @@
         withdraw: { label: 'Resgate', badgeClass: 'bg-amber-500/15 text-amber-300 border-amber-500/30', sign: '-' }
       };
 
+      const emergMetricsAll = this.getEmergencyReserveMetrics();
       let html = '';
       reserves.forEach(res => {
         const meta = RESERVE_TYPE_META[res.type] || RESERVE_TYPE_META['Outros'];
-        const hasGoal = (res.goalAmount || 0) > 0;
-        const percent = hasGoal ? Math.min(100, Math.round(((res.balance || 0) / res.goalAmount) * 100)) : 0;
+        const effectiveGoal = (res.goalAmount || 0) > 0
+          ? res.goalAmount
+          : (res.type === 'Reserva de Emergência' && emergMetricsAll.suggestedTargetAmount > 0 ? emergMetricsAll.suggestedTargetAmount : 0);
+        const hasGoal = effectiveGoal > 0;
+        const percent = hasGoal ? Math.min(100, Math.round(((res.balance || 0) / effectiveGoal) * 100)) : 0;
+        const goalLabel = (res.goalAmount || 0) <= 0 && res.type === 'Reserva de Emergência'
+          ? `Meta sugerida (${emergMetricsAll.targetMonths} meses)`
+          : 'Meta';
         const movements = res.movements || [];
         const isExpanded = this.expandedReserveHistoryIds.has(res.id);
 
         const goalBarHtml = hasGoal ? `
           <div class="space-y-1">
             <div class="flex items-center justify-between text-[11px] text-slate-400">
-              <span>Meta: <strong class="text-slate-200">${Utils.formatCurrency(res.goalAmount)}</strong></span>
+              <span>${goalLabel}: <strong class="text-slate-200">${Utils.formatCurrency(effectiveGoal)}</strong></span>
               <span class="font-semibold text-teal-300">${percent}% concluído</span>
             </div>
             <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
@@ -5739,7 +6552,13 @@
       }
 
       if (this.alertsBannerSubtitle) {
-        this.alertsBannerSubtitle.textContent = `Total pendente em alerta: ${Utils.formatCurrency(alertData.totalAmount)}`;
+        const overdueLateFees = alertData.overdue.reduce((sum, item) => sum + (Number(item.bill.lateFee) || 0), 0);
+        const overdueWarn = alertData.overdue.length > 0
+          ? (overdueLateFees > 0
+            ? ` • Evite juros/multas (+${Utils.formatCurrency(overdueLateFees)} em atraso)`
+            : ' • Priorize quitar contas vencidas para evitar juros')
+          : '';
+        this.alertsBannerSubtitle.textContent = `Total pendente em alerta: ${Utils.formatCurrency(alertData.totalAmount)}${overdueWarn}`;
       }
 
       if (this.alertsBannerList) {
@@ -5751,6 +6570,9 @@
           const pillClass = isItemOverdue
             ? 'text-rose-300 bg-rose-500/15 border-rose-500/30'
             : 'text-amber-300 bg-amber-500/15 border-amber-500/30';
+          const feeText = (Number(bill.lateFee) || 0) > 0
+            ? ` <span class="text-rose-300 font-semibold">(+${Utils.formatCurrency(bill.lateFee)} juros/multa)</span>`
+            : '';
 
           cardsHtml += `
             <div class="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-slate-900/80 border border-slate-700/70">
@@ -5760,7 +6582,7 @@
                   <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold border ${pillClass}">${status.label}</span>
                 </div>
                 <p class="text-[11px] text-slate-400 mt-1">
-                  ${Utils.formatDate(bill.dueDate)} • <span class="text-slate-200 font-semibold">${Utils.formatCurrency(bill.amount)}</span>
+                  ${Utils.formatDate(bill.dueDate)} • <span class="text-slate-200 font-semibold">${Utils.formatCurrency(bill.amount)}</span>${feeText}
                 </p>
               </div>
               <div class="flex items-center gap-1.5 shrink-0">
@@ -5988,6 +6810,14 @@
         const status = Utils.calculateBillStatus(bill.dueDate, bill.paid, alertSettings.daysBefore);
         const isChecked = bill.paid ? 'checked' : '';
         const categoryIcon = CATEGORY_ICONS[bill.category] || 'fa-file-invoice';
+        const nature = this.getItemNature(bill);
+        const lateFeeVal = Number(bill.lateFee) || 0;
+        const natureBadge = nature === 'superfluous'
+          ? '<span class="px-1.5 py-0.5 text-[10px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30 rounded-md">Supérfluo</span>'
+          : '';
+        const feeBadge = lateFeeVal > 0
+          ? `<span class="px-1.5 py-0.5 text-[10px] font-semibold bg-rose-500/15 text-rose-300 border border-rose-500/30 rounded-md">+${Utils.formatCurrency(lateFeeVal)} multa/juros</span>`
+          : '';
 
         html += `
           <div class="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 bg-slate-900/60 hover:bg-slate-900/90 border border-slate-700/60 hover:border-slate-600 rounded-xl transition-smooth gap-3 group">
@@ -6013,6 +6843,8 @@
                     <span class="w-1.5 h-1.5 rounded-full ${status.dotColor}"></span>
                     ${status.label}
                   </span>
+                  ${natureBadge}
+                  ${feeBadge}
                 </div>
                 <div class="flex items-center gap-2 mt-1 text-xs text-slate-400">
                   <span class="flex items-center gap-1">
@@ -6096,6 +6928,10 @@
         expenses = expenses.filter(e => e.method === this.expenseMethodFilter);
       }
 
+      if (this.expenseNatureFilter && this.expenseNatureFilter !== 'all') {
+        expenses = expenses.filter(e => this.getItemNature(e) === this.expenseNatureFilter);
+      }
+
       if (this.expenseSearchQuery) {
         expenses = expenses.filter(e => e.description.toLowerCase().includes(this.expenseSearchQuery));
       }
@@ -6124,6 +6960,10 @@
         const iconClass = CATEGORY_ICONS[expense.category] || 'fa-receipt';
         const methodIcon = METHOD_ICONS[expense.method] || 'fa-money-bill text-slate-400';
         const catColor = CATEGORY_COLORS[expense.category] || '#64748b';
+        const nature = this.getItemNature(expense);
+        const natureTag = nature === 'superfluous'
+          ? '<span class="px-1.5 py-0.5 text-[10px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30 rounded-md flex-shrink-0">Supérfluo</span>'
+          : '';
 
         html += `
           <div class="flex items-center justify-between p-3 bg-slate-900/60 hover:bg-slate-900/90 border border-slate-700/60 hover:border-slate-600 rounded-xl transition-smooth gap-3 group">
@@ -6134,10 +6974,11 @@
               </div>
 
               <div class="min-w-0">
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-2 flex-wrap">
                   <h4 class="text-sm font-semibold text-slate-100 truncate">
                     ${Utils.escapeHTML(expense.description)}
                   </h4>
+                  ${natureTag}
                   ${expense.installmentGroupId ? `
                     <span class="px-1.5 py-0.5 text-[10px] font-semibold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 rounded-md inline-flex items-center gap-1 flex-shrink-0" title="Compra Parcelada">
                       <i class="fa-solid fa-layer-group text-[9px]"></i>
@@ -6254,6 +7095,42 @@
         }
       }
 
+      // Resumo Essencial vs Supérfluo (Consumo Consciente)
+      if (this.natureBreakdownSummary) {
+        let essentialSum = 0;
+        let superfluousSum = 0;
+        [...periodExpenses, ...periodBills].forEach(item => {
+          const val = item.amount || 0;
+          if (this.getItemNature(item) === 'superfluous') superfluousSum += val;
+          else essentialSum += val;
+        });
+        const natureTotal = essentialSum + superfluousSum;
+        if (natureTotal <= 0) {
+          this.natureBreakdownSummary.innerHTML = `<p class="text-[11px] text-slate-500 text-center">Classifique gastos como Essencial ou Supérfluo para ver o raio-x do consumo.</p>`;
+        } else {
+          const essPct = Math.round((essentialSum / natureTotal) * 100);
+          const supPct = 100 - essPct;
+          const nudge = superfluousSum > 0
+            ? (supPct >= 35
+              ? `<p class="text-[10px] text-amber-300/90 mt-1"><i class="fa-solid fa-lightbulb mr-1"></i>Supérfluos somam ${Utils.formatCurrency(supPct > 0 ? superfluousSum : 0)}: cortar 50% liberaria ${Utils.formatCurrency(superfluousSum * 0.5)}/mês para reservas ou metas.</p>`
+              : `<p class="text-[10px] text-slate-400 mt-1">Se cortar supérfluos pela metade, libera +${Utils.formatCurrency(superfluousSum * 0.5)}/mês.</p>`)
+            : `<p class="text-[10px] text-emerald-300/90 mt-1"><i class="fa-solid fa-shield-check mr-1"></i>100% das despesas deste mês são essenciais.</p>`;
+          this.natureBreakdownSummary.innerHTML = `
+            <div class="space-y-1.5">
+              <div class="flex items-center justify-between text-[11px]">
+                <span class="text-emerald-300 font-semibold">Essenciais (${essPct}%): ${Utils.formatCurrency(essentialSum)}</span>
+                <span class="text-amber-300 font-semibold">Supérfluos (${supPct}%): ${Utils.formatCurrency(superfluousSum)}</span>
+              </div>
+              <div class="w-full h-1.5 bg-slate-700/60 rounded-full overflow-hidden flex">
+                <div class="h-full bg-emerald-500" style="width: ${essPct}%"></div>
+                <div class="h-full bg-amber-400" style="width: ${supPct}%"></div>
+              </div>
+              ${nudge}
+            </div>
+          `;
+        }
+      }
+
       // Detalhamento por Métodos de Pagamento
       if (this.methodsBreakdownContainer) {
         const methodTotals = {};
@@ -6293,6 +7170,1063 @@
           this.methodsBreakdownContainer.innerHTML = methodsHtml;
         }
       }
+    },
+
+    // ========================================================================
+    // 7 PILARES DA ORGANIZAÇÃO FINANCEIRA PESSOAL (FASES 1, 2 E 3)
+    // ========================================================================
+    getDefaultNatureForCategory(category) {
+      return ESSENTIAL_DEFAULT_CATEGORIES.has(category) ? 'essential' : 'superfluous';
+    },
+
+    getItemNature(item) {
+      if (item && (item.nature === 'essential' || item.nature === 'superfluous')) {
+        return item.nature;
+      }
+      return this.getDefaultNatureForCategory(item?.category || 'Outros');
+    },
+
+    setBillNature(nature) {
+      const normalized = nature === 'superfluous' ? 'superfluous' : 'essential';
+      if (this.billNatureInput) this.billNatureInput.value = normalized;
+      this.billNatureBtns.forEach(btn => {
+        const isActive = btn.getAttribute('data-bill-nature') === normalized;
+        btn.classList.toggle('bg-emerald-600', isActive && normalized === 'essential');
+        btn.classList.toggle('bg-amber-600', isActive && normalized === 'superfluous');
+        btn.classList.toggle('text-white', isActive);
+        btn.classList.toggle('shadow-sm', isActive);
+        btn.classList.toggle('text-slate-400', !isActive);
+      });
+    },
+
+    setExpenseNature(nature) {
+      const normalized = nature === 'superfluous' ? 'superfluous' : 'essential';
+      if (this.expenseNatureInput) this.expenseNatureInput.value = normalized;
+      this.expenseNatureBtns.forEach(btn => {
+        const isActive = btn.getAttribute('data-expense-nature') === normalized;
+        btn.classList.toggle('bg-emerald-600', isActive && normalized === 'essential');
+        btn.classList.toggle('bg-amber-600', isActive && normalized === 'superfluous');
+        btn.classList.toggle('text-white', isActive);
+        btn.classList.toggle('shadow-sm', isActive);
+        btn.classList.toggle('text-slate-400', !isActive);
+      });
+    },
+
+    populateIncomeAutoReserveSelect() {
+      if (!this.incomeAutoReserveTargetSelect) return;
+      const reserves = this.state.reserves || [];
+      let optionsHtml = '';
+      if (reserves.length === 0) {
+        optionsHtml = '<option value="__create_emergency__">Criar "Reserva de Emergência" automaticamente</option>';
+      } else {
+        reserves.forEach(r => {
+          optionsHtml += `<option value="${r.id}">${Utils.escapeHTML(r.title)} (${Utils.formatCurrency(r.balance)})</option>`;
+        });
+        if (!reserves.some(r => r.type === 'Reserva de Emergência')) {
+          optionsHtml += '<option value="__create_emergency__">+ Nova "Reserva de Emergência"</option>';
+        }
+      }
+      this.incomeAutoReserveTargetSelect.innerHTML = optionsHtml;
+    },
+
+    updateIncomeAutoReserveUI() {
+      const enabled = Boolean(this.incomeAutoReserveCheck?.checked);
+      if (this.incomeAutoReserveFields) {
+        this.incomeAutoReserveFields.classList.toggle('hidden', !enabled);
+      }
+      if (this.incomeAutoReservePreview) {
+        const amount = Utils.parseCurrency(this.incomeInput?.value || '0');
+        const pct = Math.min(90, Math.max(0, Utils.parsePercent(this.incomeAutoReservePercentInput?.value || '0')));
+        const calculated = Math.round((amount * (pct / 100)) * 100) / 100;
+        this.incomeAutoReservePreview.textContent = `Separar ao salvar: ${Utils.formatCurrency(calculated)} (${pct}%)`;
+      }
+    },
+
+    depositToReserve(targetId, amount, date, note, affectMonthBalance = true) {
+      const safeAmount = Math.round((Number(amount) || 0) * 100) / 100;
+      if (safeAmount <= 0) return null;
+      if (!Array.isArray(this.state.reserves)) this.state.reserves = [];
+
+      let reserve = this.state.reserves.find(r => r.id === targetId);
+      if (!reserve) {
+        reserve = Storage.normalizeReserve({
+          id: Utils.generateUUID(),
+          title: 'Reserva de Emergência',
+          type: 'Reserva de Emergência',
+          balance: 0,
+          goalAmount: 0,
+          movements: [],
+          createdAt: new Date().toISOString()
+        });
+        this.state.reserves.unshift(reserve);
+      }
+
+      const movement = Storage.normalizeReserveMovement({
+        id: Utils.generateUUID(),
+        type: 'deposit',
+        amount: safeAmount,
+        date: date || Utils.getTodayISO(),
+        note: note || 'Aporte automático',
+        affectMonthBalance: Boolean(affectMonthBalance),
+        createdAt: new Date().toISOString()
+      });
+
+      reserve.balance = Math.round(((reserve.balance || 0) + safeAmount) * 100) / 100;
+      if (!Array.isArray(reserve.movements)) reserve.movements = [];
+      reserve.movements.unshift(movement);
+      reserve.updatedAt = new Date().toISOString();
+      return reserve;
+    },
+
+    getLivingCostMetrics(period = this.state.currentPeriod) {
+      const allBills = this.state.bills || [];
+      const periodBills = allBills.filter(b => (b.dueDate || '').startsWith(period));
+      const structuralBills = periodBills
+        .filter(b => !b.financingPlanId)
+        .reduce((sum, b) => sum + (b.amount || 0), 0);
+      const financingBills = periodBills
+        .filter(b => Boolean(b.financingPlanId))
+        .reduce((sum, b) => sum + (b.amount || 0), 0);
+      const currentBillsTotal = Math.round((structuralBills + financingBills) * 100) / 100;
+
+      const byMonth = {};
+      allBills.forEach(b => {
+        const p = (b.dueDate || '').slice(0, 7);
+        if (/^\d{4}-\d{2}$/.test(p)) {
+          byMonth[p] = (byMonth[p] || 0) + (b.amount || 0);
+        }
+      });
+      const monthValues = Object.values(byMonth);
+      const historicalBillsAvg = monthValues.length > 0
+        ? Math.round((monthValues.reduce((s, v) => s + v, 0) / monthValues.length) * 100) / 100
+        : 0;
+
+      const livingCost = currentBillsTotal > 0 ? currentBillsTotal : historicalBillsAvg;
+      const income = this.getCurrentIncome(period);
+      const committedPct = income > 0 ? Math.round((livingCost / income) * 100) : 0;
+      const remainingAfterFixed = Math.round((income - livingCost) * 100) / 100;
+
+      const periodExpenses = (this.state.expenses || []).filter(e => (e.date || '').startsWith(period));
+      let essentialTotal = 0;
+      let superfluousTotal = 0;
+      [...periodBills, ...periodExpenses].forEach(item => {
+        const val = item.amount || 0;
+        if (this.getItemNature(item) === 'superfluous') superfluousTotal += val;
+        else essentialTotal += val;
+      });
+      const totalSpent = essentialTotal + superfluousTotal;
+      const essentialPct = totalSpent > 0 ? Math.round((essentialTotal / totalSpent) * 100) : 0;
+      const superfluousPct = totalSpent > 0 ? 100 - essentialPct : 0;
+
+      return {
+        livingCost,
+        structuralBills: Math.round(structuralBills * 100) / 100,
+        financingBills: Math.round(financingBills * 100) / 100,
+        historicalBillsAvg,
+        income,
+        committedPct,
+        remainingAfterFixed,
+        essentialTotal: Math.round(essentialTotal * 100) / 100,
+        superfluousTotal: Math.round(superfluousTotal * 100) / 100,
+        essentialPct,
+        superfluousPct
+      };
+    },
+
+    getPeriodSavingsProgress(period = this.state.currentPeriod) {
+      const goals = this.state.financeGoals || { saveGoalMode: 'percent', saveGoalValue: 20, emergencyMonths: 6 };
+      const income = this.getCurrentIncome(period);
+      const targetAmount = goals.saveGoalMode === 'fixed'
+        ? Math.round((goals.saveGoalValue || 0) * 100) / 100
+        : Math.round((income * ((goals.saveGoalValue || 0) / 100)) * 100) / 100;
+
+      const reserveFlow = this.getPeriodReserveFlow(period);
+      const savedInMonth = Math.max(0, Math.round((reserveFlow.netSavedInMonth || 0) * 100) / 100);
+      const progressPct = targetAmount > 0 ? Math.min(100, Math.round((savedInMonth / targetAmount) * 100)) : 0;
+      const goalPctOfIncome = goals.saveGoalMode === 'percent'
+        ? goals.saveGoalValue
+        : (income > 0 ? Math.round((targetAmount / income) * 100) : 0);
+
+      return {
+        mode: goals.saveGoalMode,
+        configuredValue: goals.saveGoalValue,
+        targetAmount,
+        savedInMonth,
+        progressPct,
+        goalPctOfIncome,
+        income
+      };
+    },
+
+    getEmergencyReserveMetrics(period = this.state.currentPeriod) {
+      const goals = this.state.financeGoals || { saveGoalMode: 'percent', saveGoalValue: 20, emergencyMonths: 6 };
+      const targetMonths = goals.emergencyMonths || 6;
+      const reserves = this.state.reserves || [];
+      const emergencyReserves = reserves.filter(r => r.type === 'Reserva de Emergência');
+      const emergencyBalance = Math.round(emergencyReserves.reduce((s, r) => s + (r.balance || 0), 0) * 100) / 100;
+
+      const livingMetrics = this.getLivingCostMetrics(period);
+      const monthlyBase = livingMetrics.livingCost > 0
+        ? livingMetrics.livingCost
+        : livingMetrics.essentialTotal;
+
+      const suggestedTargetAmount = Math.round((monthlyBase * targetMonths) * 100) / 100;
+      const monthsCovered = monthlyBase > 0 ? Math.round((emergencyBalance / monthlyBase) * 10) / 10 : 0;
+      const coveragePct = suggestedTargetAmount > 0
+        ? Math.min(100, Math.round((emergencyBalance / suggestedTargetAmount) * 100))
+        : 0;
+
+      return {
+        targetMonths,
+        monthlyBase: Math.round(monthlyBase * 100) / 100,
+        emergencyBalance,
+        suggestedTargetAmount,
+        monthsCovered,
+        coveragePct,
+        hasEmergencyReserve: emergencyReserves.length > 0
+      };
+    },
+
+    getAnnualExpensesMetrics() {
+      const items = this.state.annualExpenses || [];
+      const totalAnnual = Math.round(items.reduce((s, it) => s + (it.amount || 0), 0) * 100) / 100;
+      const monthlyProvision = Math.round((totalAnnual / 12) * 100) / 100;
+      const annualReservesTotal = Math.round(
+        (this.state.reserves || [])
+          .filter(r => r.type === 'Despesas Anuais')
+          .reduce((s, r) => s + (r.balance || 0), 0) * 100
+      ) / 100;
+
+      return {
+        items,
+        count: items.length,
+        totalAnnual,
+        monthlyProvision,
+        annualReservesTotal
+      };
+    },
+
+    evaluateDebtStrategy(debtsList = this.state.debts || [], strategy = this.state.debtStrategy || 'avalanche', extraMonthly = 0) {
+      const active = debtsList
+        .filter(d => !d.paidOff && (d.totalBalance || 0) > 0)
+        .map(d => ({
+          id: d.id,
+          title: d.title,
+          creditor: d.creditor || '',
+          balance: Number(d.totalBalance) || 0,
+          minPayment: Math.max(0, Number(d.monthlyPayment) || 0),
+          rate: Math.max(0, Number(d.interestRatePct) || 0) / 100,
+          ratePct: Math.max(0, Number(d.interestRatePct) || 0)
+        }));
+
+      const totalBalance = Math.round(active.reduce((s, d) => s + d.balance, 0) * 100) / 100;
+      const totalMonthlyMin = Math.round(active.reduce((s, d) => s + d.minPayment, 0) * 100) / 100;
+      const safeExtra = Math.max(0, Number(extraMonthly) || 0);
+
+      if (active.length === 0) {
+        return {
+          activeCount: 0,
+          totalBalance: 0,
+          totalMonthlyMin: 0,
+          monthsToPayoff: 0,
+          totalInterestPaid: 0,
+          payoffOrder: [],
+          stalled: false
+        };
+      }
+
+      const sortFn = strategy === 'snowball'
+        ? (a, b) => (a.balance - b.balance) || (b.ratePct - a.ratePct)
+        : (a, b) => (b.ratePct - a.ratePct) || (a.balance - b.balance);
+
+      const ordered = [...active].sort(sortFn);
+      const sim = ordered.map(d => ({ ...d, paidInMonth: null }));
+      let month = 0;
+      let totalInterestPaid = 0;
+      const MAX_MONTHS = 120;
+
+      while (sim.some(d => d.balance > 0.01) && month < MAX_MONTHS) {
+        month++;
+        let freedMinPool = 0;
+
+        sim.forEach(d => {
+          if (d.balance <= 0.01) {
+            freedMinPool += d.minPayment;
+            return;
+          }
+          const interest = Math.round((d.balance * d.rate) * 100) / 100;
+          totalInterestPaid += interest;
+          d.balance = Math.round((d.balance + interest) * 100) / 100;
+
+          const pmt = Math.min(d.balance, d.minPayment);
+          d.balance = Math.round((d.balance - pmt) * 100) / 100;
+          if (d.balance <= 0.01) {
+            freedMinPool += Math.max(0, d.minPayment - pmt);
+            d.balance = 0;
+            d.paidInMonth = month;
+          }
+        });
+
+        let extraBudget = safeExtra + freedMinPool;
+        for (let i = 0; i < sim.length && extraBudget > 0.01; i++) {
+          const target = sim[i];
+          if (target.balance <= 0.01) continue;
+          const applied = Math.min(target.balance, extraBudget);
+          target.balance = Math.round((target.balance - applied) * 100) / 100;
+          extraBudget = Math.round((extraBudget - applied) * 100) / 100;
+          if (target.balance <= 0.01) {
+            target.balance = 0;
+            if (!target.paidInMonth) target.paidInMonth = month;
+          }
+        }
+      }
+
+      const unresolved = sim.some(d => d.balance > 0.01);
+      return {
+        activeCount: active.length,
+        totalBalance,
+        totalMonthlyMin,
+        monthsToPayoff: unresolved ? null : month,
+        totalInterestPaid: Math.round(totalInterestPaid * 100) / 100,
+        payoffOrder: sim.map(d => ({ id: d.id, title: d.title, ratePct: d.ratePct, paidInMonth: d.paidInMonth })),
+        stalled: unresolved
+      };
+    },
+
+    renderFinancialHealthPanel() {
+      if (!this.financialHealthPanel) return;
+      const period = this.state.currentPeriod;
+      const living = this.getLivingCostMetrics(period);
+      const savings = this.getPeriodSavingsProgress(period);
+      const emergency = this.getEmergencyReserveMetrics(period);
+      const annual = this.getAnnualExpensesMetrics();
+      const debtEval = this.evaluateDebtStrategy(this.state.debts || [], this.state.debtStrategy || 'avalanche', 0);
+
+      const overdueAlerts = this.getDueAlertBills().overdue;
+      const overdueCount = overdueAlerts.length;
+      const overdueLateFees = overdueAlerts.reduce((s, item) => s + (Number(item.bill.lateFee) || 0), 0);
+
+      // Card A: Custo de Vida & Natureza
+      if (this.healthLivingCostValue) {
+        this.healthLivingCostValue.textContent = Utils.formatCurrency(living.livingCost);
+      }
+      if (this.healthFixedPctBadge) {
+        this.healthFixedPctBadge.textContent = living.income > 0 ? `${living.committedPct}% renda` : 'Sem renda';
+        this.healthFixedPctBadge.className = living.committedPct > 70
+          ? 'px-1.5 py-0.5 rounded-md bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[10px] font-semibold'
+          : (living.committedPct > 50
+            ? 'px-1.5 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-semibold'
+            : 'px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 text-[10px] font-semibold');
+      }
+      if (this.healthLivingCostSub) {
+        const freeText = living.income > 0 ? `Livre p/ variáveis: ${Utils.formatCurrency(living.remainingAfterFixed)}` : 'Cadastre sua renda';
+        const histNote = living.historicalBillsAvg > 0 && living.historicalBillsAvg !== living.livingCost
+          ? ` • Média: ${Utils.formatCurrency(living.historicalBillsAvg)}`
+          : '';
+        this.healthLivingCostSub.textContent = `${freeText}${histNote}`;
+      }
+      if (this.healthNatureRatioText) {
+        this.healthNatureRatioText.textContent = (living.essentialTotal + living.superfluousTotal) > 0
+          ? `${living.essentialPct}% / ${living.superfluousPct}%`
+          : '—';
+      }
+      if (this.healthEssentialBar) this.healthEssentialBar.style.width = `${living.essentialPct}%`;
+      if (this.healthSuperfluousBar) this.healthSuperfluousBar.style.width = `${living.superfluousPct}%`;
+
+      // Card B: Pague-se Primeiro
+      if (this.healthSaveGoalValue) {
+        this.healthSaveGoalValue.textContent = `${Utils.formatCurrency(savings.savedInMonth)} / ${Utils.formatCurrency(savings.targetAmount)}`;
+      }
+      if (this.healthSaveGoalPctBadge) {
+        this.healthSaveGoalPctBadge.textContent = `${savings.progressPct}%`;
+      }
+      if (this.healthSaveGoalSub) {
+        this.healthSaveGoalSub.textContent = savings.targetAmount > 0
+          ? (savings.progressPct >= 100
+            ? `Meta mensal (${savings.goalPctOfIncome}%) atingida!`
+            : `Falta separar ${Utils.formatCurrency(Math.max(0, savings.targetAmount - savings.savedInMonth))} neste mês`)
+          : 'Configure sua meta em Metas & Emergência';
+      }
+      if (this.healthSaveGoalBar) {
+        this.healthSaveGoalBar.style.width = `${savings.progressPct}%`;
+      }
+
+      // Card C: Reserva de Emergência
+      if (this.healthEmergencyValue) {
+        this.healthEmergencyValue.textContent = `${emergency.monthsCovered} meses`;
+      }
+      if (this.healthEmergencyPctBadge) {
+        this.healthEmergencyPctBadge.textContent = `${emergency.coveragePct}%`;
+      }
+      if (this.healthEmergencySub) {
+        this.healthEmergencySub.textContent = emergency.monthlyBase > 0
+          ? `${Utils.formatCurrency(emergency.emergencyBalance)} de ${Utils.formatCurrency(emergency.suggestedTargetAmount)} (${emergency.targetMonths} meses)`
+          : `Meta: ${emergency.targetMonths} meses de custo de vida`;
+      }
+      if (this.healthEmergencyBar) {
+        this.healthEmergencyBar.style.width = `${emergency.coveragePct}%`;
+      }
+
+      // Card D: Despesas Anuais & Dívidas
+      if (this.healthAnnualValue) {
+        this.healthAnnualValue.textContent = `${Utils.formatCurrency(annual.monthlyProvision)}/mês`;
+      }
+      if (this.healthAnnualSub) {
+        this.healthAnnualSub.textContent = annual.count > 0
+          ? `${annual.count} ${annual.count === 1 ? 'despesa anual' : 'despesas anuais'} (${Utils.formatCurrency(annual.totalAnnual)}/ano)`
+          : 'Nenhuma despesa anual provisionada';
+      }
+
+      const activeIssuesCount = debtEval.activeCount + overdueCount;
+      if (this.healthDebtsCountBadge) {
+        this.healthDebtsCountBadge.textContent = String(activeIssuesCount);
+        this.healthDebtsCountBadge.classList.toggle('hidden', activeIssuesCount === 0);
+      }
+
+      if (this.healthDebtStatusBadge) {
+        if (debtEval.activeCount > 0 || overdueCount > 0) {
+          this.healthDebtStatusBadge.textContent = `${activeIssuesCount} alerta${activeIssuesCount > 1 ? 's' : ''}`;
+          this.healthDebtStatusBadge.className = 'px-1.5 py-0.5 rounded-md bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[10px] font-semibold';
+        } else {
+          this.healthDebtStatusBadge.textContent = 'Sem dívidas';
+          this.healthDebtStatusBadge.className = 'px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 text-[10px] font-semibold';
+        }
+      }
+
+      if (this.healthDebtSub) {
+        const parts = [];
+        if (debtEval.activeCount > 0) {
+          parts.push(`Dívidas: ${Utils.formatCurrency(debtEval.totalBalance)} (${Utils.formatCurrency(debtEval.totalMonthlyMin)}/mês)`);
+        }
+        if (overdueCount > 0) {
+          parts.push(`${overdueCount} conta${overdueCount > 1 ? 's' : ''} atrasada${overdueCount > 1 ? 's' : ''}${overdueLateFees > 0 ? ` (+${Utils.formatCurrency(overdueLateFees)} multa)` : ''}`);
+        }
+        this.healthDebtSub.textContent = parts.length > 0 ? parts.join(' • ') : 'Sem dívidas ou atrasos pendentes';
+      }
+
+      // Badge geral de saúde dos 7 pilares
+      if (this.healthScoreBadge) {
+        let pillars = 0;
+        if (living.income > 0 && living.committedPct <= 60) pillars++;
+        if (savings.progressPct >= 100) pillars++;
+        if (emergency.coveragePct >= 50) pillars++;
+        if (debtEval.activeCount === 0 && overdueCount === 0) pillars++;
+
+        if (debtEval.activeCount > 0 || overdueCount > 0) {
+          this.healthScoreBadge.textContent = 'Priorize Quitar Dívidas';
+          this.healthScoreBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/15 border border-rose-500/30 text-rose-300';
+        } else if (pillars >= 3) {
+          this.healthScoreBadge.textContent = 'Finanças Equilibradas';
+          this.healthScoreBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 border border-emerald-500/30 text-emerald-300';
+        } else {
+          this.healthScoreBadge.textContent = 'Em Construção';
+          this.healthScoreBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 border border-amber-500/30 text-amber-300';
+        }
+      }
+    },
+
+    // ========================================================================
+    // MODAL: METAS DE ECONOMIA & RESERVA DE EMERGÊNCIA
+    // ========================================================================
+    openGoalsModal() {
+      const goals = Storage.normalizeFinanceGoals(this.state.financeGoals);
+      this.setGoalSaveMode(goals.saveGoalMode, false);
+      if (goals.saveGoalMode === 'percent' && this.goalSavePercentInput) {
+        this.goalSavePercentInput.value = String(goals.saveGoalValue || 20);
+      } else if (this.goalSaveValueInput) {
+        this.goalSaveValueInput.value = Utils.formatNumberToInput(goals.saveGoalValue || 0);
+      }
+      this.setGoalEmergencyMonths(goals.emergencyMonths, false);
+      this.updateGoalsModalPreviews();
+      this.openModal(this.goalsModal);
+    },
+
+    setGoalSaveMode(mode, refresh = true) {
+      const normalized = mode === 'fixed' ? 'fixed' : 'percent';
+      if (this.goalSaveModeInput) this.goalSaveModeInput.value = normalized;
+      this.goalModeBtns.forEach(btn => {
+        const active = btn.getAttribute('data-goal-mode') === normalized;
+        btn.classList.toggle('bg-teal-600', active);
+        btn.classList.toggle('text-white', active);
+        btn.classList.toggle('text-slate-400', !active);
+      });
+      if (this.goalSavePercentWrap) this.goalSavePercentWrap.classList.toggle('hidden', normalized !== 'percent');
+      if (this.goalSaveFixedWrap) this.goalSaveFixedWrap.classList.toggle('hidden', normalized !== 'fixed');
+      if (refresh) this.updateGoalsModalPreviews();
+    },
+
+    setGoalEmergencyMonths(months, refresh = true) {
+      const valid = [3, 6, 9, 12].includes(months) ? months : 6;
+      if (this.goalEmergencyMonthsInput) this.goalEmergencyMonthsInput.value = String(valid);
+      this.goalMonthsBtns.forEach(btn => {
+        const active = parseInt(btn.getAttribute('data-emergency-months') || '6', 10) === valid;
+        btn.classList.toggle('border-sky-500', active);
+        btn.classList.toggle('bg-sky-500/20', active);
+        btn.classList.toggle('text-sky-300', active);
+        btn.classList.toggle('border-slate-700', !active);
+        btn.classList.toggle('bg-slate-950', !active);
+        btn.classList.toggle('text-slate-300', !active);
+      });
+      if (refresh) this.updateGoalsModalPreviews();
+    },
+
+    updateGoalsModalPreviews() {
+      const mode = this.goalSaveModeInput?.value === 'fixed' ? 'fixed' : 'percent';
+      const income = this.getCurrentIncome(this.state.currentPeriod);
+      const val = mode === 'fixed'
+        ? Utils.parseCurrency(this.goalSaveValueInput?.value || '0')
+        : Math.min(90, Math.max(0, Utils.parsePercent(this.goalSavePercentInput?.value || '0')));
+      const monthlyTarget = mode === 'fixed' ? val : Math.round((income * (val / 100)) * 100) / 100;
+
+      if (this.goalSaveLivePreview) {
+        this.goalSaveLivePreview.innerHTML = income > 0
+          ? `Com renda atual de <strong>${Utils.formatCurrency(income)}</strong>, sua meta mensal é guardar <strong class="text-teal-300">${Utils.formatCurrency(monthlyTarget)}/mês</strong> (em 12 meses: <strong>${Utils.formatCurrency(monthlyTarget * 12)}</strong>).`
+          : `Meta configurada: <strong class="text-teal-300">${mode === 'percent' ? `${val}% da renda` : `${Utils.formatCurrency(val)}/mês`}</strong>.`;
+      }
+
+      if (this.goalEmergencyPreview) {
+        const months = parseInt(this.goalEmergencyMonthsInput?.value || '6', 10) || 6;
+        const living = this.getLivingCostMetrics(this.state.currentPeriod);
+        const base = living.livingCost > 0 ? living.livingCost : living.essentialTotal;
+        const suggested = Math.round((base * months) * 100) / 100;
+        const curEmerg = this.getEmergencyReserveMetrics(this.state.currentPeriod).emergencyBalance;
+        this.goalEmergencyPreview.innerHTML = base > 0
+          ? `Base do seu Custo de Vida: <strong>${Utils.formatCurrency(base)}/mês</strong> × <strong>${months} meses</strong> = Meta recomendada de <strong class="text-sky-300">${Utils.formatCurrency(suggested)}</strong> (você já tem ${Utils.formatCurrency(curEmerg)}).`
+          : `Cadastre contas fixas para calcularmos automaticamente o valor ideal para ${months} meses.`;
+      }
+    },
+
+    handleGoalsSubmit(e) {
+      e.preventDefault();
+      const mode = this.goalSaveModeInput?.value === 'fixed' ? 'fixed' : 'percent';
+      const val = mode === 'fixed'
+        ? Utils.parseCurrency(this.goalSaveValueInput?.value || '0')
+        : Math.min(90, Math.max(0, Utils.parsePercent(this.goalSavePercentInput?.value || '0')));
+      const emergencyMonths = parseInt(this.goalEmergencyMonthsInput?.value || '6', 10) || 6;
+
+      this.state.financeGoals = Storage.normalizeFinanceGoals({
+        saveGoalMode: mode,
+        saveGoalValue: val,
+        emergencyMonths
+      });
+      Storage.save(this.state);
+      this.closeModal(this.goalsModal);
+      this.render();
+      Toast.show('Metas de economia e reserva de emergência atualizadas!', 'success');
+    },
+
+    // ========================================================================
+    // MODAL: DESPESAS ANUAIS & PROVISÃO MENSAL (IPVA, IPTU, SEGURO)
+    // ========================================================================
+    openAnnualExpensesModal() {
+      this.resetAnnualExpenseForm();
+      this.renderAnnualExpensesModal();
+      this.openModal(this.annualExpensesModal);
+      this.annualTitleInput?.focus();
+    },
+
+    resetAnnualExpenseForm() {
+      this.annualExpenseForm?.reset();
+      if (this.annualEditId) this.annualEditId.value = '';
+      if (this.annualAmountInput) this.annualAmountInput.value = '0,00';
+      if (this.annualCategorySelect) this.annualCategorySelect.value = 'Outros';
+      if (this.annualDueMonthSelect) this.annualDueMonthSelect.value = '1';
+      this.annualCancelEditBtn?.classList.add('hidden');
+      if (this.annualSubmitBtn) this.annualSubmitBtn.textContent = 'Salvar Despesa Anual';
+      this.populateAnnualReserveSelect();
+    },
+
+    populateAnnualReserveSelect(selectedId = '') {
+      if (!this.annualReserveSelect) return;
+      const reserves = this.state.reserves || [];
+      let html = '<option value="">Sem vínculo específico (auto-criar se separar)</option>';
+      reserves.forEach(r => {
+        html += `<option value="${r.id}">${Utils.escapeHTML(r.title)} (${Utils.formatCurrency(r.balance)})</option>`;
+      });
+      this.annualReserveSelect.innerHTML = html;
+      this.annualReserveSelect.value = reserves.some(r => r.id === selectedId) ? selectedId : '';
+    },
+
+    editAnnualExpense(id) {
+      const item = (this.state.annualExpenses || []).find(a => a.id === id);
+      if (!item) return;
+      if (this.annualEditId) this.annualEditId.value = item.id;
+      if (this.annualTitleInput) this.annualTitleInput.value = item.title;
+      if (this.annualCategorySelect) this.annualCategorySelect.value = item.category || 'Outros';
+      if (this.annualAmountInput) this.annualAmountInput.value = Utils.formatNumberToInput(item.amount);
+      if (this.annualDueMonthSelect) this.annualDueMonthSelect.value = String(item.dueMonth || 1);
+      this.populateAnnualReserveSelect(item.reserveId || '');
+      this.annualCancelEditBtn?.classList.remove('hidden');
+      if (this.annualSubmitBtn) this.annualSubmitBtn.textContent = 'Salvar Alterações';
+      this.annualTitleInput?.focus();
+    },
+
+    async deleteAnnualExpense(id) {
+      const item = (this.state.annualExpenses || []).find(a => a.id === id);
+      if (!item) return;
+      const confirmed = await ConfirmDialog.open({
+        title: 'Excluir Despesa Anual',
+        message: `Deseja remover "${item.title}" (${Utils.formatCurrency(item.amount)}/ano)?`
+      });
+      if (!confirmed) return;
+
+      this.state.annualExpenses = (this.state.annualExpenses || []).filter(a => a.id !== id);
+      Storage.save(this.state);
+      this.render();
+      this.renderAnnualExpensesModal();
+      Toast.show(`Despesa anual "${item.title}" removida.`, 'info');
+    },
+
+    handleAnnualExpenseSubmit(e) {
+      e.preventDefault();
+      const editId = this.annualEditId?.value || '';
+      const title = (this.annualTitleInput?.value || '').trim();
+      const category = this.annualCategorySelect?.value || 'Outros';
+      const amount = Utils.parseCurrency(this.annualAmountInput?.value || '0');
+      const dueMonth = parseInt(this.annualDueMonthSelect?.value || '1', 10) || 1;
+      const reserveId = this.annualReserveSelect?.value || '';
+
+      if (!title) {
+        Toast.show('Informe a descrição da despesa anual (ex: IPVA, IPTU).', 'warning');
+        return;
+      }
+      if (amount <= 0) {
+        Toast.show('O valor anual estimado deve ser maior que zero.', 'warning');
+        return;
+      }
+
+      if (!Array.isArray(this.state.annualExpenses)) this.state.annualExpenses = [];
+
+      if (editId) {
+        const idx = this.state.annualExpenses.findIndex(a => a.id === editId);
+        if (idx !== -1) {
+          this.state.annualExpenses[idx] = Storage.normalizeAnnualExpense({
+            ...this.state.annualExpenses[idx],
+            title,
+            category,
+            amount,
+            dueMonth,
+            reserveId,
+            updatedAt: new Date().toISOString()
+          });
+          Toast.show(`Despesa anual "${title}" atualizada!`, 'success');
+        }
+      } else {
+        this.state.annualExpenses.unshift(Storage.normalizeAnnualExpense({
+          id: Utils.generateUUID(),
+          title,
+          category,
+          amount,
+          dueMonth,
+          reserveId,
+          createdAt: new Date().toISOString()
+        }));
+        Toast.show(`Despesa anual "${title}" cadastrada! Provisão sugerida: ${Utils.formatCurrency(amount / 12)}/mês.`, 'success');
+      }
+
+      Storage.save(this.state);
+      this.resetAnnualExpenseForm();
+      this.render();
+      this.renderAnnualExpensesModal();
+    },
+
+    depositAnnualMonthlyProvision(annualId) {
+      const item = (this.state.annualExpenses || []).find(a => a.id === annualId);
+      if (!item) return;
+
+      const monthlyPart = Math.round((item.amount / 12) * 100) / 100;
+      let targetReserve = (this.state.reserves || []).find(r => r.id === item.reserveId)
+        || (this.state.reserves || []).find(r => r.type === 'Despesas Anuais');
+
+      if (!targetReserve) {
+        targetReserve = Storage.normalizeReserve({
+          id: Utils.generateUUID(),
+          title: 'Fundo Despesas Anuais',
+          type: 'Despesas Anuais',
+          balance: 0,
+          goalAmount: this.getAnnualExpensesMetrics().totalAnnual,
+          movements: [],
+          createdAt: new Date().toISOString()
+        });
+        if (!Array.isArray(this.state.reserves)) this.state.reserves = [];
+        this.state.reserves.unshift(targetReserve);
+      }
+
+      item.reserveId = targetReserve.id;
+      item.lastDepositedPeriod = this.state.currentPeriod;
+      this.depositToReserve(
+        targetReserve.id,
+        monthlyPart,
+        Utils.shiftDateToPeriod(Utils.getTodayISO(), this.state.currentPeriod) || `${this.state.currentPeriod}-05`,
+        `Provisão Anual 1/12: ${item.title}`,
+        true
+      );
+
+      Storage.save(this.state);
+      this.render();
+      this.renderAnnualExpensesModal();
+      Toast.show(`Provisão de ${Utils.formatCurrency(monthlyPart)} separada para "${item.title}" em "${targetReserve.title}"!`, 'success');
+    },
+
+    launchAnnualExpenseBill(annualId) {
+      const item = (this.state.annualExpenses || []).find(a => a.id === annualId);
+      if (!item) return;
+
+      const curYear = parseInt(this.state.currentPeriod.split('-')[0], 10) || new Date().getFullYear();
+      const targetPeriod = `${curYear}-${String(item.dueMonth).padStart(2, '0')}`;
+      const dueDate = `${targetPeriod}-10`;
+
+      if (!Array.isArray(this.state.bills)) this.state.bills = [];
+      this.state.bills.push(Storage.normalizeBillRecord({
+        id: Utils.generateUUID(),
+        title: `${item.title} (Anual ${curYear})`,
+        amount: item.amount,
+        dueDate,
+        category: item.category,
+        nature: 'essential',
+        paid: false,
+        createdAt: new Date().toISOString()
+      }));
+
+      Storage.save(this.state);
+      this.render();
+      Toast.show(`Conta "${item.title}" lançada em ${Utils.formatPeriod(targetPeriod)}!`, 'success');
+    },
+
+    renderAnnualExpensesModal() {
+      const metrics = this.getAnnualExpensesMetrics();
+      if (this.annualSummaryBanner) {
+        this.annualSummaryBanner.innerHTML = `
+          <div>
+            <span class="text-[10px] uppercase tracking-wider font-semibold text-sky-300 block">Provisão Mensal Sugerida (/ 12 meses)</span>
+            <span class="text-lg font-bold text-white">${Utils.formatCurrency(metrics.monthlyProvision)}/mês</span>
+          </div>
+          <div class="text-right text-xs">
+            <span class="text-slate-300 block">Total anual: <strong>${Utils.formatCurrency(metrics.totalAnnual)}</strong></span>
+            <span class="text-sky-300 block">Guardado p/ anuais: <strong>${Utils.formatCurrency(metrics.annualReservesTotal)}</strong></span>
+          </div>
+        `;
+      }
+
+      if (!this.annualExpensesListContainer) return;
+      if (metrics.items.length === 0) {
+        this.annualExpensesListContainer.innerHTML = `
+          <div class="text-center py-6 px-4 rounded-xl bg-slate-900/40 border border-slate-800 text-slate-400 space-y-1.5">
+            <i class="fa-solid fa-calendar-check text-2xl text-slate-600"></i>
+            <p class="text-xs font-semibold text-slate-300">Nenhuma despesa anual cadastrada</p>
+            <p class="text-[11px] text-slate-500">Use os atalhos acima (IPVA, IPTU, Seguro, Escolar) para evitar sustos no início e meio do ano.</p>
+          </div>
+        `;
+        return;
+      }
+
+      const curMonth = parseInt(this.state.currentPeriod.split('-')[1], 10) || 1;
+      let html = '';
+      metrics.items.forEach(item => {
+        const monthlyPart = Math.round((item.amount / 12) * 100) / 100;
+        const diffMonths = (item.dueMonth - curMonth + 12) % 12 || 12;
+        const monthName = MONTH_NAMES_PT[(item.dueMonth || 1) - 1] || 'Janeiro';
+        const alreadySavedThisMonth = item.lastDepositedPeriod === this.state.currentPeriod;
+
+        html += `
+          <div class="p-3.5 rounded-xl bg-slate-900/60 border border-slate-700/60 space-y-2">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-xs font-bold text-slate-100">${Utils.escapeHTML(item.title)}</span>
+                  <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-sky-500/15 text-sky-300 border border-sky-500/30">${monthName} (em ${diffMonths}m)</span>
+                  <span class="px-2 py-0.5 rounded-full text-[10px] bg-slate-800 text-slate-300 border border-slate-700">${Utils.escapeHTML(item.category)}</span>
+                </div>
+                <p class="text-[11px] text-slate-400 mt-1">
+                  Anual: <strong class="text-slate-200">${Utils.formatCurrency(item.amount)}</strong> • Provisão (/12): <strong class="text-sky-300">${Utils.formatCurrency(monthlyPart)}/mês</strong>
+                </p>
+              </div>
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <button type="button" data-annual-deposit="${item.id}" class="px-2.5 py-1 rounded-lg ${alreadySavedThisMonth ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-sky-600 hover:bg-sky-500 text-white border-sky-500'} border text-[11px] font-semibold transition-colors">
+                  ${alreadySavedThisMonth ? '✓ Separado no mês' : `Separar ${Utils.formatCurrency(monthlyPart)}`}
+                </button>
+                <button type="button" data-annual-bill="${item.id}" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[11px] font-semibold transition-colors" title="Criar Conta Fixa no mês de vencimento">
+                  Lançar Conta
+                </button>
+                <button type="button" data-annual-edit="${item.id}" class="action-icon-btn text-slate-400 hover:text-sky-400 hover:bg-slate-800" title="Editar">
+                  <i class="fa-solid fa-pen text-xs"></i>
+                </button>
+                <button type="button" data-annual-del="${item.id}" class="action-icon-btn text-slate-400 hover:text-rose-400 hover:bg-slate-800" title="Excluir">
+                  <i class="fa-solid fa-trash text-xs"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      });
+
+      this.annualExpensesListContainer.innerHTML = html;
+      this.annualExpensesListContainer.querySelectorAll('[data-annual-deposit]').forEach(b => {
+        b.addEventListener('click', () => this.depositAnnualMonthlyProvision(b.getAttribute('data-annual-deposit')));
+      });
+      this.annualExpensesListContainer.querySelectorAll('[data-annual-bill]').forEach(b => {
+        b.addEventListener('click', () => this.launchAnnualExpenseBill(b.getAttribute('data-annual-bill')));
+      });
+      this.annualExpensesListContainer.querySelectorAll('[data-annual-edit]').forEach(b => {
+        b.addEventListener('click', () => this.editAnnualExpense(b.getAttribute('data-annual-edit')));
+      });
+      this.annualExpensesListContainer.querySelectorAll('[data-annual-del]').forEach(b => {
+        b.addEventListener('click', () => this.deleteAnnualExpense(b.getAttribute('data-annual-del')));
+      });
+    },
+
+    // ========================================================================
+    // MODAL: PAINEL DE DÍVIDAS & ESTRATÉGIA (AVALANCHE VS BOLA DE NEVE)
+    // ========================================================================
+    openDebtsModal() {
+      this.resetDebtForm();
+      this.setDebtStrategyUI(this.state.debtStrategy || 'avalanche');
+      this.renderDebtsModal();
+      this.openModal(this.debtsModal);
+      this.debtTitleInput?.focus();
+    },
+
+    setDebtStrategyUI(strategy) {
+      const normalized = strategy === 'snowball' ? 'snowball' : 'avalanche';
+      if (this.debtStrategyInput) this.debtStrategyInput.value = normalized;
+      this.debtStrategyBtns.forEach(btn => {
+        const active = btn.getAttribute('data-debt-strategy') === normalized;
+        btn.classList.toggle('bg-rose-600', active);
+        btn.classList.toggle('text-white', active);
+        btn.classList.toggle('text-slate-400', !active);
+      });
+    },
+
+    resetDebtForm() {
+      this.debtForm?.reset();
+      if (this.debtEditId) this.debtEditId.value = '';
+      if (this.debtBalanceInput) this.debtBalanceInput.value = '0,00';
+      if (this.debtMonthlyPaymentInput) this.debtMonthlyPaymentInput.value = '0,00';
+      if (this.debtInterestInput) this.debtInterestInput.value = '';
+      this.debtCancelEditBtn?.classList.add('hidden');
+      if (this.debtSubmitBtn) this.debtSubmitBtn.textContent = 'Salvar Dívida';
+    },
+
+    editDebt(debtId) {
+      const d = (this.state.debts || []).find(item => item.id === debtId);
+      if (!d) return;
+      if (this.debtEditId) this.debtEditId.value = d.id;
+      if (this.debtTitleInput) this.debtTitleInput.value = d.title;
+      if (this.debtCreditorInput) this.debtCreditorInput.value = d.creditor || '';
+      if (this.debtBalanceInput) this.debtBalanceInput.value = Utils.formatNumberToInput(d.totalBalance || 0);
+      if (this.debtMonthlyPaymentInput) this.debtMonthlyPaymentInput.value = Utils.formatNumberToInput(d.monthlyPayment || 0);
+      if (this.debtInterestInput) this.debtInterestInput.value = d.interestRatePct > 0 ? String(d.interestRatePct) : '';
+      this.debtCancelEditBtn?.classList.remove('hidden');
+      if (this.debtSubmitBtn) this.debtSubmitBtn.textContent = 'Salvar Alterações';
+      this.debtTitleInput?.focus();
+    },
+
+    async deleteDebt(debtId) {
+      const d = (this.state.debts || []).find(item => item.id === debtId);
+      if (!d) return;
+      const confirmed = await ConfirmDialog.open({
+        title: 'Excluir Dívida',
+        message: `Remover o registro da dívida "${d.title}"?`
+      });
+      if (!confirmed) return;
+
+      this.state.debts = (this.state.debts || []).filter(item => item.id !== debtId);
+      Storage.save(this.state);
+      this.render();
+      this.renderDebtsModal();
+      Toast.show(`Dívida "${d.title}" removida.`, 'info');
+    },
+
+    amortizeDebt(debtId) {
+      const d = (this.state.debts || []).find(item => item.id === debtId);
+      if (!d || d.paidOff) return;
+      const payment = d.monthlyPayment > 0 ? Math.min(d.totalBalance, d.monthlyPayment) : d.totalBalance;
+      d.totalBalance = Math.max(0, Math.round((d.totalBalance - payment) * 100) / 100);
+      if (d.totalBalance <= 0.01) {
+        d.totalBalance = 0;
+        d.paidOff = true;
+      }
+      d.updatedAt = new Date().toISOString();
+
+      Storage.save(this.state);
+      this.render();
+      this.renderDebtsModal();
+      Toast.show(
+        d.paidOff
+          ? `Parabéns! Dívida "${d.title}" marcada como QUITADA!`
+          : `Amortização de ${Utils.formatCurrency(payment)} registrada em "${d.title}". Saldo: ${Utils.formatCurrency(d.totalBalance)}.`,
+        'success'
+      );
+    },
+
+    handleDebtSubmit(e) {
+      e.preventDefault();
+      const editId = this.debtEditId?.value || '';
+      const title = (this.debtTitleInput?.value || '').trim();
+      const creditor = (this.debtCreditorInput?.value || '').trim();
+      const totalBalance = Utils.parseCurrency(this.debtBalanceInput?.value || '0');
+      const monthlyPayment = Utils.parseCurrency(this.debtMonthlyPaymentInput?.value || '0');
+      const interestRatePct = Math.max(0, Utils.parsePercent(this.debtInterestInput?.value || '0'));
+
+      if (!title) {
+        Toast.show('Informe a descrição da dívida.', 'warning');
+        return;
+      }
+      if (totalBalance <= 0) {
+        Toast.show('Informe o saldo devedor atual maior que zero.', 'warning');
+        return;
+      }
+
+      if (!Array.isArray(this.state.debts)) this.state.debts = [];
+
+      if (editId) {
+        const idx = this.state.debts.findIndex(item => item.id === editId);
+        if (idx !== -1) {
+          this.state.debts[idx] = Storage.normalizeDebt({
+            ...this.state.debts[idx],
+            title,
+            creditor,
+            totalBalance,
+            monthlyPayment,
+            interestRatePct,
+            paidOff: false,
+            updatedAt: new Date().toISOString()
+          });
+          Toast.show(`Dívida "${title}" atualizada!`, 'success');
+        }
+      } else {
+        this.state.debts.unshift(Storage.normalizeDebt({
+          id: Utils.generateUUID(),
+          title,
+          creditor,
+          totalBalance,
+          monthlyPayment,
+          interestRatePct,
+          paidOff: false,
+          createdAt: new Date().toISOString()
+        }));
+        Toast.show(`Dívida "${title}" registrada no plano de quitação.`, 'success');
+      }
+
+      Storage.save(this.state);
+      this.resetDebtForm();
+      this.render();
+      this.renderDebtsModal();
+    },
+
+    renderDebtStrategyProjection() {
+      if (!this.debtStrategyProjection) return;
+      const debts = this.state.debts || [];
+      const strategy = this.debtStrategyInput?.value === 'snowball' ? 'snowball' : 'avalanche';
+      const extra = Utils.parseCurrency(this.debtExtraMonthlyInput?.value || '0');
+      const res = this.evaluateDebtStrategy(debts, strategy, extra);
+
+      if (res.activeCount === 0) {
+        this.debtStrategyProjection.innerHTML = 'Nenhuma dívida ativa. Continue evitando parcelamentos desnecessários!';
+        return;
+      }
+      if (res.stalled || !res.monthsToPayoff) {
+        this.debtStrategyProjection.innerHTML = `<span class="text-rose-300 font-semibold">Pagamento mensal insuficiente para cobrir os juros em até 120 meses. Aumente a parcela ou o aporte extra.</span>`;
+        return;
+      }
+
+      const firstTarget = res.payoffOrder[0];
+      const strategyLabel = strategy === 'snowball' ? 'Bola de Neve' : 'Avalanche';
+      this.debtStrategyProjection.innerHTML = `
+        <strong>${strategyLabel}:</strong> quitação total prevista em <strong class="text-emerald-300">${res.monthsToPayoff} ${res.monthsToPayoff === 1 ? 'mês' : 'meses'}</strong> (juros est.: ${Utils.formatCurrency(res.totalInterestPaid)}). Atacar primeiro: <strong class="text-rose-300">${Utils.escapeHTML(firstTarget.title)}</strong>.
+      `;
+    },
+
+    renderDebtsModal() {
+      const period = this.state.currentPeriod;
+      const debts = this.state.debts || [];
+      const strategy = this.state.debtStrategy || 'avalanche';
+      const evalCurrent = this.evaluateDebtStrategy(debts, strategy, 0);
+      const income = this.getCurrentIncome(period);
+      const financingMonthly = (this.state.bills || [])
+        .filter(b => (b.dueDate || '').startsWith(period) && b.financingPlanId)
+        .reduce((s, b) => s + (b.amount || 0), 0);
+      const totalBurden = evalCurrent.totalMonthlyMin + financingMonthly;
+      const burdenPct = income > 0 ? Math.round((totalBurden / income) * 100) : 0;
+
+      if (this.debtsSummaryBanner) {
+        this.debtsSummaryBanner.innerHTML = `
+          <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div>
+              <span class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold block">Saldo Total em Dívidas</span>
+              <span class="text-lg font-bold ${evalCurrent.totalBalance > 0 ? 'text-rose-300' : 'text-emerald-300'}">${Utils.formatCurrency(evalCurrent.totalBalance)}</span>
+            </div>
+            <div class="text-right">
+              <span class="text-slate-300 block">Parcelas dívidas + financ.: <strong>${Utils.formatCurrency(totalBurden)}/mês</strong></span>
+              <span class="text-[11px] ${burdenPct > 30 ? 'text-rose-300 font-semibold' : 'text-slate-400'}">Comprometimento da renda: ${burdenPct}%</span>
+            </div>
+          </div>
+        `;
+      }
+
+      this.renderDebtStrategyProjection();
+      if (!this.debtsListContainer) return;
+
+      if (debts.length === 0) {
+        this.debtsListContainer.innerHTML = `
+          <div class="text-center py-6 px-4 rounded-xl bg-slate-900/40 border border-slate-800 text-slate-400 space-y-1.5">
+            <i class="fa-solid fa-link-slash text-2xl text-emerald-500/50"></i>
+            <p class="text-xs font-semibold text-slate-200">Nenhuma dívida registrada</p>
+            <p class="text-[11px] text-slate-500">Se você tem rotativo, cheque especial ou atrasos, cadastre aqui para simular a estratégia mais rápida para quitar.</p>
+          </div>
+        `;
+        return;
+      }
+
+      const rankMap = {};
+      evalCurrent.payoffOrder.forEach((p, idx) => { rankMap[p.id] = idx + 1; });
+
+      let html = '';
+      debts.forEach(d => {
+        const orderNum = rankMap[d.id];
+        const statusBadge = d.paidOff || d.totalBalance === 0
+          ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">Quitada</span>'
+          : `<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/15 text-rose-300 border border-rose-500/30">${orderNum ? `Prioridade #${orderNum}` : 'Ativa'}</span>`;
+
+        html += `
+          <div class="p-3.5 rounded-xl bg-slate-900/60 border border-slate-700/60 flex flex-wrap items-center justify-between gap-2.5">
+            <div class="min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-xs font-bold text-slate-100">${Utils.escapeHTML(d.title)}</span>
+                ${d.creditor ? `<span class="text-[11px] text-slate-400">(${Utils.escapeHTML(d.creditor)})</span>` : ''}
+                ${statusBadge}
+              </div>
+              <p class="text-[11px] text-slate-400 mt-1">
+                Saldo: <strong class="text-slate-200">${Utils.formatCurrency(d.totalBalance)}</strong> • Parcela: ${Utils.formatCurrency(d.monthlyPayment)}/mês • Juros: <strong class="text-amber-300">${d.interestRatePct}% a.m.</strong>
+              </p>
+            </div>
+            <div class="flex items-center gap-1.5">
+              ${(!d.paidOff && d.totalBalance > 0) ? `
+                <button type="button" data-debt-amortize="${d.id}" class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold transition-colors">
+                  Amortizar / Pagar
+                </button>
+              ` : ''}
+              <button type="button" data-debt-edit="${d.id}" class="action-icon-btn text-slate-400 hover:text-rose-300 hover:bg-slate-800" title="Editar dívida">
+                <i class="fa-solid fa-pen text-xs"></i>
+              </button>
+              <button type="button" data-debt-del="${d.id}" class="action-icon-btn text-slate-400 hover:text-rose-400 hover:bg-slate-800" title="Excluir dívida">
+                <i class="fa-solid fa-trash text-xs"></i>
+              </button>
+            </div>
+          </div>
+        `;
+      });
+
+      this.debtsListContainer.innerHTML = html;
+      this.debtsListContainer.querySelectorAll('[data-debt-amortize]').forEach(b => {
+        b.addEventListener('click', () => this.amortizeDebt(b.getAttribute('data-debt-amortize')));
+      });
+      this.debtsListContainer.querySelectorAll('[data-debt-edit]').forEach(b => {
+        b.addEventListener('click', () => this.editDebt(b.getAttribute('data-debt-edit')));
+      });
+      this.debtsListContainer.querySelectorAll('[data-debt-del]').forEach(b => {
+        b.addEventListener('click', () => this.deleteDebt(b.getAttribute('data-debt-del')));
+      });
     }
   };
 
