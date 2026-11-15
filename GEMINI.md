@@ -24,4 +24,5 @@
 - [x] Projeção de ritmo de queima orçamentária (Burn-rate diário).
 - [x] Alertas de vencimento de contas fixas com controle de ativação/desativação e notificações locais.
 - [x] Gerenciamento de múltiplas fontes de renda por mês (tipos de renda, data opcional, edição/exclusão e replicação do mês anterior).
-- [x] Planejamento e simulação de compras futuras (parcelado/à vista e meta mensal de economia, projeção de orçamento futuro, recomendação inteligente e efetivação com 1 clique).
+- [x] Planejamento e simulação de compras futuras (parcelado/à vista, financiamento com taxa de juros ou parcela proposta Price/SAC, entrada configurável com origem mensal ou de reserva, meta mensal de economia, projeção de orçamento futuro, recomendação inteligente e efetivação para gastos diários ou contas fixas).
+- [x] Gerenciamento de caixinhas e reservas (dinheiro já guardado contínuo entre meses, aportes/resgates com impacto opcional no saldo mensal, integração com planejamento de compras e relatórios JSON/CSV).

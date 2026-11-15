@@ -56,6 +56,16 @@
     'Outros': { icon: 'fa-coins', color: '#64748b' }
   };
 
+  const RESERVE_TYPE_META = {
+    'Reserva de Emergência': { icon: 'fa-shield-halved', color: '#10b981' },
+    'Caixinha / Conta Rende': { icon: 'fa-piggy-bank', color: '#14b8a6' },
+    'Poupança': { icon: 'fa-building-columns', color: '#3b82f6' },
+    'Investimentos / CDB': { icon: 'fa-chart-line', color: '#f59e0b' },
+    'Dinheiro Físico': { icon: 'fa-money-bill-wave', color: '#22c55e' },
+    'Objetivo / Sonho': { icon: 'fa-star', color: '#a855f7' },
+    'Outros': { icon: 'fa-vault', color: '#64748b' }
+  };
+
   // ==========================================================================
   // 2. FUNÇÕES UTILITÁRIAS & DEFENSIVIDADE
   // ==========================================================================
@@ -96,6 +106,29 @@
 
       const parsed = parseFloat(sanitized);
       return isNaN(parsed) ? 0 : Math.round(parsed * 100) / 100;
+    },
+
+    /**
+     * Converte taxas percentuais digitadas (ex: "1,89%", "1.495") mantendo até 4 casas decimais
+     */
+    parsePercent(input) {
+      if (typeof input === 'number') {
+        return Number.isFinite(input) && input >= 0 ? Math.round(input * 10000) / 10000 : 0;
+      }
+      if (!input || typeof input !== 'string') {
+        return 0;
+      }
+
+      let sanitized = input.trim().replace(/[%\s]/g, '');
+      if (sanitized.includes(',') && sanitized.includes('.')) {
+        sanitized = sanitized.replace(/\./g, '').replace(',', '.');
+      } else if (sanitized.includes(',')) {
+        sanitized = sanitized.replace(',', '.');
+      }
+
+      const parsed = parseFloat(sanitized);
+      if (!Number.isFinite(parsed) || parsed < 0) return 0;
+      return Math.round(parsed * 10000) / 10000;
     },
 
     /**
@@ -177,22 +210,17 @@
     },
 
     /**
-     * Navega meses (+1 ou -1) mantendo formato YYYY-MM
+     * Navega meses (+N ou -N) mantendo formato YYYY-MM com aritmética calendário exata
      */
     shiftPeriod(periodStr, delta) {
       const [yearStr, monthStr] = periodStr.split('-');
-      let year = parseInt(yearStr, 10);
-      let month = parseInt(monthStr, 10) + delta;
+      const year = parseInt(yearStr, 10);
+      const month = parseInt(monthStr, 10);
+      const totalMonths = (year * 12) + (month - 1) + (parseInt(delta, 10) || 0);
+      const targetYear = Math.floor(totalMonths / 12);
+      const targetMonth = ((totalMonths % 12) + 12) % 12 + 1;
 
-      if (month < 1) {
-        month = 12;
-        year -= 1;
-      } else if (month > 12) {
-        month = 1;
-        year += 1;
-      }
-
-      return `${year}-${String(month).padStart(2, '0')}`;
+      return `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
     },
 
     /**
@@ -382,6 +410,8 @@
   // ==========================================================================
   const ConfirmDialog = {
     modal: document.getElementById('confirmModal'),
+    iconWrapEl: document.getElementById('confirmModalIconWrap'),
+    iconEl: document.getElementById('confirmModalIcon'),
     titleEl: document.getElementById('confirmModalTitle'),
     messageEl: document.getElementById('confirmModalMessage'),
     okBtn: document.getElementById('okConfirmBtn'),
@@ -395,11 +425,56 @@
       this.modal.querySelector('.modal-backdrop')?.addEventListener('click', () => this.close(false));
     },
 
-    open({ title = 'Confirmar Exclusão', message = 'Tem certeza que deseja continuar?' }) {
+    open({
+      title = 'Confirmar Exclusão',
+      message = 'Tem certeza que deseja continuar?',
+      confirmText,
+      cancelText = 'Cancelar',
+      variant = 'danger',
+      icon
+    }) {
+      const VARIANTS = {
+        danger: {
+          confirmText: 'Excluir',
+          icon: 'fa-trash-can',
+          iconWrapClass: 'w-12 h-12 rounded-full bg-rose-500/10 text-rose-400 mx-auto flex items-center justify-center text-lg mb-3',
+          okBtnClass: 'flex-1 px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-semibold transition-smooth shadow-md shadow-rose-600/20'
+        },
+        warning: {
+          confirmText: 'Confirmar',
+          icon: 'fa-triangle-exclamation',
+          iconWrapClass: 'w-12 h-12 rounded-full bg-amber-500/10 text-amber-400 mx-auto flex items-center justify-center text-lg mb-3',
+          okBtnClass: 'flex-1 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-semibold transition-smooth shadow-md shadow-amber-600/20'
+        },
+        primary: {
+          confirmText: 'Confirmar',
+          icon: 'fa-copy',
+          iconWrapClass: 'w-12 h-12 rounded-full bg-indigo-500/10 text-indigo-400 mx-auto flex items-center justify-center text-lg mb-3',
+          okBtnClass: 'flex-1 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold transition-smooth shadow-md shadow-indigo-600/20'
+        },
+        success: {
+          confirmText: 'Confirmar',
+          icon: 'fa-check',
+          iconWrapClass: 'w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-400 mx-auto flex items-center justify-center text-lg mb-3',
+          okBtnClass: 'flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold transition-smooth shadow-md shadow-emerald-600/20'
+        }
+      };
+
+      const cfg = VARIANTS[variant] || VARIANTS.danger;
+      const resolvedIcon = icon || cfg.icon;
+      const resolvedConfirmText = confirmText || cfg.confirmText;
+
       return new Promise((resolve) => {
         this.resolveCallback = resolve;
         this.titleEl.textContent = title;
         this.messageEl.textContent = message;
+        if (this.iconWrapEl) this.iconWrapEl.className = cfg.iconWrapClass;
+        if (this.iconEl) this.iconEl.className = `fa-solid ${resolvedIcon}`;
+        if (this.okBtn) {
+          this.okBtn.textContent = resolvedConfirmText;
+          this.okBtn.className = cfg.okBtnClass;
+        }
+        if (this.cancelBtn) this.cancelBtn.textContent = cancelText;
         this.modal.classList.remove('hidden');
       });
     },
@@ -441,6 +516,7 @@
           'Lazer': 250.00
         },
         plans: [],
+        reserves: [],
         alertSettings: Utils.normalizeAlertSettings(),
         bills: [
           {
@@ -601,11 +677,33 @@
         ? Math.round(parsedSaved * 100) / 100
         : 0;
       const category = CATEGORY_COLORS[raw.category] ? raw.category : 'Compras';
-      const mode = raw.mode === 'save' ? 'save' : 'installment';
+      const validModes = new Set(['installment', 'financing', 'save']);
+      const mode = validModes.has(raw.mode) ? raw.mode : 'installment';
+
+      const maxInstallments = mode === 'financing' ? 420 : 36;
+      const defaultInstallments = mode === 'financing' ? 48 : 10;
       const parsedInst = parseInt(raw.installments, 10);
       const installments = (Number.isFinite(parsedInst) && parsedInst >= 1)
-        ? Math.min(36, parsedInst)
+        ? Math.min(maxInstallments, parsedInst)
+        : defaultInstallments;
+
+      const downPaymentSource = raw.downPaymentSource === 'month_budget' ? 'month_budget' : 'saved';
+      const financingCalcBy = raw.financingCalcBy === 'installment' ? 'installment' : 'rate';
+      const parsedRate = Number(raw.interestRate);
+      const interestRate = (Number.isFinite(parsedRate) && parsedRate >= 0)
+        ? Math.round(parsedRate * 10000) / 10000
+        : 0;
+      const interestRateUnit = raw.interestRateUnit === 'annual' ? 'annual' : 'monthly';
+      const amortizationType = raw.amortizationType === 'sac' ? 'sac' : 'price';
+      const parsedFinPmt = Number(raw.financingInstallmentAmount);
+      const financingInstallmentAmount = (Number.isFinite(parsedFinPmt) && parsedFinPmt >= 0)
+        ? Math.round(parsedFinPmt * 100) / 100
+        : 0;
+      const parsedDueDay = parseInt(raw.financingDueDay, 10);
+      const financingDueDay = (Number.isFinite(parsedDueDay) && parsedDueDay >= 1)
+        ? Math.min(31, parsedDueDay)
         : 10;
+
       const parsedMonthly = Number(raw.monthlyContribution);
       const monthlyContribution = (Number.isFinite(parsedMonthly) && parsedMonthly >= 0)
         ? Math.round(parsedMonthly * 100) / 100
@@ -618,9 +716,16 @@
         title,
         targetAmount,
         savedAmount,
+        downPaymentSource,
         category,
         mode,
         installments,
+        financingCalcBy,
+        interestRate,
+        interestRateUnit,
+        amortizationType,
+        financingInstallmentAmount,
+        financingDueDay,
         monthlyContribution,
         paymentMethod,
         status,
@@ -633,6 +738,68 @@
     normalizePlans(rawPlans) {
       if (!Array.isArray(rawPlans)) return [];
       return rawPlans.map(p => this.normalizePlan(p)).filter(Boolean);
+    },
+
+    normalizeReserveMovement(raw) {
+      if (!raw || typeof raw !== 'object') return null;
+      const validTypes = new Set(['initial', 'deposit', 'withdraw']);
+      const type = validTypes.has(raw.type) ? raw.type : 'deposit';
+      const parsedAmount = Number(raw.amount);
+      const amount = (Number.isFinite(parsedAmount) && parsedAmount >= 0)
+        ? Math.round(parsedAmount * 100) / 100
+        : 0;
+      if (amount <= 0) return null;
+
+      const date = (typeof raw.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.date))
+        ? raw.date
+        : Utils.getTodayISO();
+
+      return {
+        id: (typeof raw.id === 'string' && raw.id.trim()) ? raw.id : Utils.generateUUID(),
+        type,
+        amount,
+        date,
+        note: (typeof raw.note === 'string') ? raw.note.trim() : '',
+        affectMonthBalance: type === 'initial' ? false : Boolean(raw.affectMonthBalance),
+        createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : new Date().toISOString()
+      };
+    },
+
+    normalizeReserve(raw) {
+      if (!raw || typeof raw !== 'object') return null;
+
+      const title = (typeof raw.title === 'string' && raw.title.trim())
+        ? raw.title.trim()
+        : 'Reserva';
+      const type = RESERVE_TYPE_META[raw.type] ? raw.type : 'Outros';
+      const parsedBalance = Number(raw.balance);
+      const balance = (Number.isFinite(parsedBalance) && parsedBalance >= 0)
+        ? Math.round(parsedBalance * 100) / 100
+        : 0;
+      const parsedGoal = Number(raw.goalAmount);
+      const goalAmount = (Number.isFinite(parsedGoal) && parsedGoal >= 0)
+        ? Math.round(parsedGoal * 100) / 100
+        : 0;
+
+      const movements = Array.isArray(raw.movements)
+        ? raw.movements.map(m => this.normalizeReserveMovement(m)).filter(Boolean)
+        : [];
+
+      return {
+        id: (typeof raw.id === 'string' && raw.id.trim()) ? raw.id : Utils.generateUUID(),
+        title,
+        type,
+        balance,
+        goalAmount,
+        movements,
+        createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : new Date().toISOString(),
+        ...(typeof raw.updatedAt === 'string' ? { updatedAt: raw.updatedAt } : {})
+      };
+    },
+
+    normalizeReserves(rawReserves) {
+      if (!Array.isArray(rawReserves)) return [];
+      return rawReserves.map(r => this.normalizeReserve(r)).filter(Boolean);
     },
 
     load() {
@@ -661,6 +828,7 @@
 
         parsed.incomeEntries = this.normalizeIncomeEntries(parsed);
         parsed.plans = this.normalizePlans(parsed.plans);
+        parsed.reserves = this.normalizeReserves(parsed.reserves);
         delete parsed.monthlyIncome;
         delete parsed.incomes;
         parsed.version = 2;
@@ -779,6 +947,7 @@
     billFilter: 'all',
     expenseSearchQuery: '',
     expenseCategoryFilter: 'all',
+    expandedReserveHistoryIds: new Set(),
 
     init() {
       ConfirmDialog.init();
@@ -809,7 +978,11 @@
       Utils.attachCurrencyMask(this.expenseAmountInput);
       Utils.attachCurrencyMask(this.planTargetAmountInput);
       Utils.attachCurrencyMask(this.planSavedAmountInput);
+      Utils.attachCurrencyMask(this.planFinancingInstallmentInput);
       Utils.attachCurrencyMask(this.planMonthlyContributionInput);
+      Utils.attachCurrencyMask(this.reserveMoveAmountInput);
+      Utils.attachCurrencyMask(this.reserveBalanceInput);
+      Utils.attachCurrencyMask(this.reserveGoalInput);
     },
 
     cacheDOMElements() {
@@ -956,10 +1129,28 @@
       this.planTitleInput = document.getElementById('planTitleInput');
       this.planCategorySelect = document.getElementById('planCategorySelect');
       this.planTargetAmountInput = document.getElementById('planTargetAmountInput');
+      this.planSavedAmountLabel = document.getElementById('planSavedAmountLabel');
       this.planSavedAmountInput = document.getElementById('planSavedAmountInput');
+      this.planDownPaymentSourceBox = document.getElementById('planDownPaymentSourceBox');
+      this.planDownPaymentSourceInput = document.getElementById('planDownPaymentSourceInput');
+      this.planDownPaymentSourceBtns = document.querySelectorAll('.plan-entry-source-btn');
+      this.planDownPaymentSourceHint = document.getElementById('planDownPaymentSourceHint');
+      this.planEntryPercentBtns = document.querySelectorAll('[data-plan-entry-pct]');
       this.planInstallmentFields = document.getElementById('planInstallmentFields');
       this.planInstallmentsSelect = document.getElementById('planInstallmentsSelect');
       this.planPaymentMethodSelect = document.getElementById('planPaymentMethodSelect');
+      this.planFinancingFields = document.getElementById('planFinancingFields');
+      this.planFinancingCalcByInput = document.getElementById('planFinancingCalcByInput');
+      this.planFinancingCalcBtns = document.querySelectorAll('.plan-fin-calc-btn');
+      this.planFinancingMonthsInput = document.getElementById('planFinancingMonthsInput');
+      this.planFinancingMonthPresetBtns = document.querySelectorAll('[data-plan-fin-months]');
+      this.planFinancingDueDayInput = document.getElementById('planFinancingDueDayInput');
+      this.planFinancingRateFields = document.getElementById('planFinancingRateFields');
+      this.planInterestRateInput = document.getElementById('planInterestRateInput');
+      this.planInterestRateUnitSelect = document.getElementById('planInterestRateUnitSelect');
+      this.planAmortizationSelect = document.getElementById('planAmortizationSelect');
+      this.planFinancingInstallmentFields = document.getElementById('planFinancingInstallmentFields');
+      this.planFinancingInstallmentInput = document.getElementById('planFinancingInstallmentInput');
       this.planSaveFields = document.getElementById('planSaveFields');
       this.planMonthlyContributionInput = document.getElementById('planMonthlyContributionInput');
       this.planPresetMonthBtns = document.querySelectorAll('[data-plan-preset-months]');
@@ -968,6 +1159,49 @@
       this.planningSubmitBtn = document.getElementById('planningSubmitBtn');
       this.plansCountBadge = document.getElementById('plansCountBadge');
       this.plansListContainer = document.getElementById('plansListContainer');
+      this.planReserveAssistBox = document.getElementById('planReserveAssistBox');
+      this.planReserveSourceSelect = document.getElementById('planReserveSourceSelect');
+      this.planApplyReserveBtn = document.getElementById('planApplyReserveBtn');
+
+      // Caixinhas e Reservas (Dinheiro Guardado)
+      this.topTotalReserves = document.getElementById('topTotalReserves');
+      this.topReservesMetaText = document.getElementById('topReservesMetaText');
+      this.topMonthReservedBadge = document.getElementById('topMonthReservedBadge');
+      this.sidebarTotalReserves = document.getElementById('sidebarTotalReserves');
+      this.reservesBreakdownList = document.getElementById('reservesBreakdownList');
+
+      this.reservesModal = document.getElementById('reservesModal');
+      this.reservesModalBody = document.getElementById('reservesModalBody');
+      this.reservesModalTotal = document.getElementById('reservesModalTotal');
+      this.reserveTabBtns = document.querySelectorAll('.reserve-tab-btn');
+      this.reserveMovePanel = document.getElementById('reserveMovePanel');
+      this.reserveManagePanel = document.getElementById('reserveManagePanel');
+
+      this.reserveMoveForm = document.getElementById('reserveMoveForm');
+      this.reserveOpTypeInput = document.getElementById('reserveOpTypeInput');
+      this.reserveOpBtns = document.querySelectorAll('.reserve-op-btn');
+      this.reserveMoveSelect = document.getElementById('reserveMoveSelect');
+      this.reserveMoveSelectedBalance = document.getElementById('reserveMoveSelectedBalance');
+      this.reserveMoveAmountInput = document.getElementById('reserveMoveAmountInput');
+      this.reserveMoveDateInput = document.getElementById('reserveMoveDateInput');
+      this.reserveMoveNoteInput = document.getElementById('reserveMoveNoteInput');
+      this.reserveMoveAffectMonthCheckbox = document.getElementById('reserveMoveAffectMonthCheckbox');
+      this.reserveMoveAffectMonthLabel = document.getElementById('reserveMoveAffectMonthLabel');
+      this.reserveMoveAffectMonthHint = document.getElementById('reserveMoveAffectMonthHint');
+      this.reserveMoveSubmitBtn = document.getElementById('reserveMoveSubmitBtn');
+
+      this.reserveForm = document.getElementById('reserveForm');
+      this.reserveFormTitle = document.getElementById('reserveFormTitle');
+      this.reserveEditId = document.getElementById('reserveEditId');
+      this.cancelReserveEditBtn = document.getElementById('cancelReserveEditBtn');
+      this.reserveTitleInput = document.getElementById('reserveTitleInput');
+      this.reserveTypeSelect = document.getElementById('reserveTypeSelect');
+      this.reserveBalanceInput = document.getElementById('reserveBalanceInput');
+      this.reserveBalanceHint = document.getElementById('reserveBalanceHint');
+      this.reserveGoalInput = document.getElementById('reserveGoalInput');
+      this.reserveSubmitBtn = document.getElementById('reserveSubmitBtn');
+      this.reservesCountBadge = document.getElementById('reservesCountBadge');
+      this.reservesListContainer = document.getElementById('reservesListContainer');
     },
 
     bindEvents() {
@@ -1031,6 +1265,12 @@
       document.getElementById('openPlanningHeaderBtn')?.addEventListener('click', openPlanning);
       document.getElementById('openPlanningModalBtn')?.addEventListener('click', openPlanning);
 
+      // Caixinhas e Reservas Modal
+      const openReserves = () => this.openReservesModal();
+      document.getElementById('openReservesHeaderBtn')?.addEventListener('click', openReserves);
+      document.getElementById('openReservesStripBtn')?.addEventListener('click', openReserves);
+      document.getElementById('openReservesModalBtn')?.addEventListener('click', openReserves);
+
       // Alertas de Vencimento Modal
       const openAlerts = () => this.openAlertModal();
       this.openAlertModalBtn?.addEventListener('click', openAlerts);
@@ -1060,7 +1300,7 @@
             ConfirmDialog.close(false);
             return;
           }
-          [this.incomeModal, this.billModal, this.expenseModal, this.budgetModal, this.alertModal, this.planningModal].forEach(m => {
+          [this.incomeModal, this.billModal, this.expenseModal, this.budgetModal, this.alertModal, this.planningModal, this.reservesModal].forEach(m => {
             if (m && !m.classList.contains('hidden')) this.closeModal(m);
           });
         }
@@ -1080,10 +1320,58 @@
         this.updatePlanSimulationPreview();
       });
 
+      // Controles de Reservas / Caixinhas
+      this.reserveTabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          this.setReserveTab(btn.getAttribute('data-reserve-tab') || 'move');
+        });
+      });
+      this.reserveOpBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          this.setReserveOp(btn.getAttribute('data-reserve-op') || 'deposit');
+        });
+      });
+      this.reserveMoveSelect?.addEventListener('change', () => this.updateSelectedReserveBalanceDisplay());
+      this.reserveMoveForm?.addEventListener('submit', (e) => this.handleReserveMoveSubmit(e));
+      this.reserveForm?.addEventListener('submit', (e) => this.handleReserveSubmit(e));
+      this.cancelReserveEditBtn?.addEventListener('click', () => this.resetReserveForm());
+
+      // Integração Planejamento <- Caixinhas
+      this.planApplyReserveBtn?.addEventListener('click', () => this.applyReserveToPlan());
+
       // Controles dinâmicos do Simulador de Planejamento
       this.planModeBtns.forEach(btn => {
         btn.addEventListener('click', () => {
           this.setPlanMode(btn.getAttribute('data-plan-mode') || 'installment');
+        });
+      });
+
+      this.planDownPaymentSourceBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          this.setPlanDownPaymentSource(btn.getAttribute('data-plan-entry-source') || 'saved');
+        });
+      });
+
+      this.planEntryPercentBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const pct = parseFloat(btn.getAttribute('data-plan-entry-pct'));
+          this.applyPlanDownPaymentPercent(pct);
+        });
+      });
+
+      this.planFinancingCalcBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          this.setPlanFinancingCalcBy(btn.getAttribute('data-plan-fin-calc') || 'rate');
+        });
+      });
+
+      this.planFinancingMonthPresetBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const months = parseInt(btn.getAttribute('data-plan-fin-months'), 10);
+          if (this.planFinancingMonthsInput && Number.isFinite(months) && months > 0) {
+            this.planFinancingMonthsInput.value = String(months);
+            this.updatePlanSimulationPreview();
+          }
         });
       });
 
@@ -1094,6 +1382,12 @@
         this.planSavedAmountInput,
         this.planInstallmentsSelect,
         this.planPaymentMethodSelect,
+        this.planFinancingMonthsInput,
+        this.planFinancingDueDayInput,
+        this.planInterestRateInput,
+        this.planInterestRateUnitSelect,
+        this.planAmortizationSelect,
+        this.planFinancingInstallmentInput,
         this.planMonthlyContributionInput
       ].forEach(el => {
         el?.addEventListener('input', () => this.updatePlanSimulationPreview());
@@ -1225,29 +1519,70 @@
 
       const confirmed = await ConfirmDialog.open({
         title: 'Replicar Contas Fixas',
-        message: `Deseja copiar ${prevBills.length} contas de ${Utils.formatPeriod(prevPeriod)} para ${Utils.formatPeriod(currentPeriod)}? Elas serão criadas como Pendentes.`
+        message: `Deseja copiar ${prevBills.length} contas de ${Utils.formatPeriod(prevPeriod)} para ${Utils.formatPeriod(currentPeriod)}? Elas serão criadas como Pendentes.`,
+        confirmText: 'Copiar Contas',
+        variant: 'primary',
+        icon: 'fa-copy'
       });
 
       if (!confirmed) return;
 
-      const newBills = prevBills.map(bill => {
-        // Mantém o dia original de vencimento ajustando para o novo período
+      let skippedFinishedFinancing = 0;
+      const newBills = [];
+      prevBills.forEach(bill => {
+        // Mantém o dia original de vencimento ajustando com segurança para o novo período
         const dayPart = bill.dueDate.split('-')[2] || '10';
-        return {
+        const nextDueDate = Utils.shiftDateToPeriod(`${prevPeriod}-${dayPart}`, currentPeriod) || `${currentPeriod}-${dayPart}`;
+        const totalFin = parseInt(bill.financingTotalInstallments, 10) || 0;
+        const currFin = parseInt(bill.financingCurrentInstallment, 10) || 0;
+
+        if (totalFin > 0 && currFin > 0) {
+          if (currFin >= totalFin) {
+            skippedFinishedFinancing++;
+            return;
+          }
+          const nextInst = currFin + 1;
+          const updatedTitle = bill.title.replace(/\(Financ\.\s*\d+\/\d+\)/, `(Financ. ${nextInst}/${totalFin})`);
+          newBills.push({
+            id: Utils.generateUUID(),
+            title: updatedTitle !== bill.title ? updatedTitle : `${bill.title} (${nextInst}/${totalFin})`,
+            amount: bill.amount,
+            dueDate: nextDueDate,
+            category: bill.category,
+            paid: false,
+            ...(bill.financingPlanId ? { financingPlanId: bill.financingPlanId } : {}),
+            financingCurrentInstallment: nextInst,
+            financingTotalInstallments: totalFin,
+            createdAt: new Date().toISOString()
+          });
+          return;
+        }
+
+        newBills.push({
           id: Utils.generateUUID(),
           title: bill.title,
           amount: bill.amount,
-          dueDate: `${currentPeriod}-${dayPart}`,
+          dueDate: nextDueDate,
           category: bill.category,
           paid: false,
           createdAt: new Date().toISOString()
-        };
+        });
       });
+
+      if (newBills.length === 0 && skippedFinishedFinancing > 0) {
+        Toast.show('Os financiamentos do mês anterior já chegaram à parcela final.', 'info');
+        return;
+      }
 
       this.state.bills.push(...newBills);
       Storage.save(this.state);
       this.render();
-      Toast.show(`${newBills.length} contas replicadas com sucesso para este mês!`, 'success');
+      Toast.show(
+        skippedFinishedFinancing > 0
+          ? `${newBills.length} conta(s) replicada(s) (${skippedFinishedFinancing} financiamento encerrado não copiado).`
+          : `${newBills.length} contas replicadas com sucesso para este mês!`,
+        'success'
+      );
     },
 
     // ========================================================================
@@ -1555,7 +1890,10 @@
 
       const confirmed = await ConfirmDialog.open({
         title: 'Copiar Rendas do Mês Anterior',
-        message: `Deseja copiar ${prevIncomes.length} fonte(s) de renda de ${Utils.formatPeriod(prevPeriod)} para ${Utils.formatPeriod(currentPeriod)}?`
+        message: `Deseja copiar ${prevIncomes.length} fonte(s) de renda de ${Utils.formatPeriod(prevPeriod)} para ${Utils.formatPeriod(currentPeriod)}?`,
+        confirmText: 'Copiar Rendas',
+        variant: 'primary',
+        icon: 'fa-copy'
       });
 
       if (!confirmed) return;
@@ -1821,7 +2159,9 @@
         const income = this.getCurrentIncome();
         const billsTotal = periodBills.reduce((acc, b) => acc + (b.amount || 0), 0);
         const expensesTotal = periodExpenses.reduce((acc, e) => acc + (e.amount || 0), 0);
-        const balance = income - billsTotal - expensesTotal;
+        const reserveFlow = this.getPeriodReserveFlow(period);
+        const totalReserves = this.getTotalReservesBalance();
+        const balance = income - billsTotal - expensesTotal - reserveFlow.netSavedInMonth;
 
         // Inicia com BOM UTF-8 para garantir abertura perfeita no Microsoft Excel
         let csv = '\uFEFF';
@@ -1836,7 +2176,9 @@
         csv += `Renda Líquida Mensal;${Utils.formatCurrency(income)}\r\n`;
         csv += `Total Contas Fixas;${Utils.formatCurrency(billsTotal)}\r\n`;
         csv += `Total Gastos Diários;${Utils.formatCurrency(expensesTotal)}\r\n`;
-        csv += `Saldo Líquido Restante;${Utils.formatCurrency(balance)}\r\n\r\n`;
+        csv += `Guardado / Resgatado Líquido no Mês;${Utils.formatCurrency(reserveFlow.netSavedInMonth)}\r\n`;
+        csv += `Saldo Líquido Restante;${Utils.formatCurrency(balance)}\r\n`;
+        csv += `Patrimônio Total em Reservas;${Utils.formatCurrency(totalReserves)}\r\n\r\n`;
 
         // Tabela de Fontes de Renda
         csv += 'FONTES DE RENDA DO MÊS\r\n';
@@ -1875,6 +2217,47 @@
           periodExpenses.forEach(e => {
             const valor = (e.amount || 0).toFixed(2).replace('.', ',');
             csv += `"${e.description.replace(/"/g, '""')}";"${e.category}";"${e.method}";"${Utils.formatDate(e.date)}";${valor}\r\n`;
+          });
+        }
+        csv += '\r\n';
+
+        // Tabela de Reservas e Caixinhas
+        const reserves = this.state.reserves || [];
+        csv += 'RESERVAS E CAIXINHAS (DINHEIRO GUARDADO)\r\n';
+        csv += 'Caixinha;Tipo;Saldo Atual (R$);Meta (R$);Progresso\r\n';
+        if (reserves.length === 0) {
+          csv += 'Nenhuma caixinha cadastrada;;;;\r\n';
+        } else {
+          reserves.forEach(r => {
+            const bal = (r.balance || 0).toFixed(2).replace('.', ',');
+            const goal = (r.goalAmount || 0).toFixed(2).replace('.', ',');
+            const prog = r.goalAmount > 0 ? `${Math.min(100, Math.round((r.balance / r.goalAmount) * 100))}%` : 'Sem meta';
+            csv += `"${r.title.replace(/"/g, '""')}";"${r.type}";${bal};${goal};"${prog}"\r\n`;
+          });
+        }
+        csv += '\r\n';
+
+        // Movimentações de Reservas no Mês
+        const monthMovements = [];
+        reserves.forEach(r => {
+          (r.movements || []).forEach(mov => {
+            if ((mov.date || '').startsWith(period)) {
+              monthMovements.push({ reserveTitle: r.title, ...mov });
+            }
+          });
+        });
+        csv += 'MOVIMENTAÇÕES DE RESERVAS NO MÊS\r\n';
+        csv += 'Data;Caixinha;Operação;Impacta Saldo do Mês;Valor (R$);Observação\r\n';
+        if (monthMovements.length === 0) {
+          csv += 'Nenhuma movimentação de reserva neste mês;;;;;\r\n';
+        } else {
+          const OP_LABELS = { initial: 'Saldo inicial', deposit: 'Aporte', withdraw: 'Resgate' };
+          monthMovements.forEach(mov => {
+            const valor = (mov.amount || 0).toFixed(2).replace('.', ',');
+            const opLabel = OP_LABELS[mov.type] || mov.type;
+            const impactLabel = mov.affectMonthBalance ? 'Sim' : 'Não';
+            const note = (mov.note || '').replace(/"/g, '""');
+            csv += `"${Utils.formatDate(mov.date)}";"${mov.reserveTitle.replace(/"/g, '""')}";"${opLabel}";"${impactLabel}";${valor};"${note}"\r\n`;
           });
         }
 
@@ -1933,7 +2316,10 @@
 
           const confirmed = await ConfirmDialog.open({
             title: 'Substituir Dados Atuais?',
-            message: 'A importação deste arquivo substituirá todos os lançamentos e configurações atuais. Deseja prosseguir?'
+            message: 'A importação deste arquivo substituirá todos os lançamentos e configurações atuais. Deseja prosseguir?',
+            confirmText: 'Substituir',
+            variant: 'warning',
+            icon: 'fa-file-import'
           });
 
           if (!confirmed) {
@@ -1953,7 +2339,8 @@
             alertSettings: Utils.normalizeAlertSettings(parsed.alertSettings),
             bills: Array.isArray(parsed.bills) ? parsed.bills : [],
             expenses: Array.isArray(parsed.expenses) ? parsed.expenses : [],
-            plans: Storage.normalizePlans(parsed.plans)
+            plans: Storage.normalizePlans(parsed.plans),
+            reserves: Storage.normalizeReserves(parsed.reserves)
           };
 
           Storage.save(this.state);
@@ -1983,6 +2370,7 @@
       this.renderExpenses();
       this.renderChartsAndInsights();
       this.renderBudgets();
+      this.renderReserves();
       this.renderPlanning();
     },
 
@@ -2007,8 +2395,9 @@
       const billsPaid = periodBills.filter(b => b.paid).length;
       const billsPending = periodBills.length - billsPaid;
       const expensesTotal = periodExpenses.reduce((acc, e) => acc + (e.amount || 0), 0);
+      const reserveFlow = this.getPeriodReserveFlow(period);
 
-      const balance = income - billsTotal - expensesTotal;
+      const balance = Math.round((income - billsTotal - expensesTotal - reserveFlow.netSavedInMonth) * 100) / 100;
 
       // 1. Renda
       if (this.kpiIncome) {
@@ -2057,7 +2446,13 @@
             this.kpiBalanceIcon.className = 'w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-xs';
           }
           if (this.kpiBalanceSubtitle) {
-            this.kpiBalanceSubtitle.textContent = 'Orçamento sob controle';
+            if (reserveFlow.netSavedInMonth > 0) {
+              this.kpiBalanceSubtitle.textContent = `Descontando ${Utils.formatCurrency(reserveFlow.netSavedInMonth)} guardados no mês`;
+            } else if (reserveFlow.netSavedInMonth < 0) {
+              this.kpiBalanceSubtitle.textContent = `Inclui ${Utils.formatCurrency(Math.abs(reserveFlow.netSavedInMonth))} resgatados de reservas`;
+            } else {
+              this.kpiBalanceSubtitle.textContent = 'Orçamento sob controle';
+            }
           }
         } else {
           this.kpiBalance.className = 'text-2xl font-bold text-rose-400 tracking-tight';
@@ -2065,7 +2460,9 @@
             this.kpiBalanceIcon.className = 'w-7 h-7 rounded-lg bg-rose-500/10 text-rose-400 flex items-center justify-center text-xs';
           }
           if (this.kpiBalanceSubtitle) {
-            this.kpiBalanceSubtitle.textContent = 'Atenção: Despesas superam a renda';
+            this.kpiBalanceSubtitle.textContent = reserveFlow.netSavedInMonth > 0
+              ? 'Atenção: Despesas e reservas superam a renda'
+              : 'Atenção: Despesas superam a renda';
           }
         }
       }
@@ -2086,7 +2483,8 @@
       const income = this.getCurrentIncome();
       const billsTotal = periodBills.reduce((acc, b) => acc + (b.amount || 0), 0);
       const expensesTotal = periodExpenses.reduce((acc, e) => acc + (e.amount || 0), 0);
-      const balance = income - billsTotal - expensesTotal;
+      const reserveFlow = this.getPeriodReserveFlow(period);
+      const balance = Math.round((income - billsTotal - expensesTotal - reserveFlow.netSavedInMonth) * 100) / 100;
 
       const [year, month] = period.split('-').map(Number);
       const totalDaysInMonth = new Date(year, month, 0).getDate();
@@ -2117,7 +2515,7 @@
 
       // 3. Projeção de saldo ao final do mês
       const projectedTotalExpenses = isCurrentMonth ? (actualDailyPace * totalDaysInMonth) : expensesTotal;
-      const projectedBalance = income - billsTotal - projectedTotalExpenses;
+      const projectedBalance = Math.round((income - billsTotal - projectedTotalExpenses - reserveFlow.netSavedInMonth) * 100) / 100;
 
       // Atualiza DOM
       if (this.burnRateDailyAllowance) {
@@ -2386,7 +2784,8 @@
         .filter(e => (e.date || '').startsWith(period))
         .reduce((sum, e) => sum + (e.amount || 0), 0);
 
-      const totalCommitted = Math.round((bills + expenses) * 100) / 100;
+      const reserveFlow = this.getPeriodReserveFlow(period);
+      const totalCommitted = Math.round((bills + expenses + reserveFlow.netSavedInMonth) * 100) / 100;
       const balanceBefore = Math.round((income - totalCommitted) * 100) / 100;
 
       return {
@@ -2394,6 +2793,7 @@
         income: Math.round(income * 100) / 100,
         bills: Math.round(bills * 100) / 100,
         expenses: Math.round(expenses * 100) / 100,
+        reservedNet: reserveFlow.netSavedInMonth,
         totalCommitted,
         balanceBefore,
         usesRecurringBase: isFuture && (usesRecurringIncome || usesRecurringBills)
@@ -2422,12 +2822,201 @@
       return { safeCount, baseAmount, firstAmount };
     },
 
+    getSpecialPeriodsSet() {
+      const periods = new Set([this.state.currentPeriod]);
+      (this.state.incomeEntries || []).forEach(entry => {
+        const p = Utils.getIncomePeriod(entry);
+        if (p) periods.add(p);
+      });
+      (this.state.bills || []).forEach(b => {
+        if (typeof b.dueDate === 'string' && b.dueDate.length >= 7) periods.add(b.dueDate.slice(0, 7));
+      });
+      (this.state.expenses || []).forEach(e => {
+        if (typeof e.date === 'string' && e.date.length >= 7) periods.add(e.date.slice(0, 7));
+      });
+      (this.state.reserves || []).forEach(r => {
+        (r.movements || []).forEach(m => {
+          if (typeof m.date === 'string' && m.date.length >= 7) periods.add(m.date.slice(0, 7));
+        });
+      });
+      return periods;
+    },
+
+    getGenericFutureBaseline(basePeriod) {
+      const recurringIncome = Math.round(this.getCurrentIncome(basePeriod) * 100) / 100;
+      const recurringBills = Math.round(
+        (this.state.bills || [])
+          .filter(b => (b.dueDate || '').startsWith(basePeriod))
+          .reduce((sum, b) => sum + (b.amount || 0), 0) * 100
+      ) / 100;
+
+      return {
+        period: basePeriod,
+        income: recurringIncome,
+        bills: recurringBills,
+        expenses: 0,
+        reservedNet: 0,
+        totalCommitted: recurringBills,
+        balanceBefore: Math.round((recurringIncome - recurringBills) * 100) / 100,
+        usesRecurringBase: true
+      };
+    },
+
+    solveMonthlyRateFromPMT(principal, pmt, months) {
+      if (principal <= 0 || months <= 0 || pmt <= 0) return 0;
+      if ((pmt * months) <= principal + 0.005) return 0;
+      if (months === 1) return Math.max(0, (pmt / principal) - 1);
+
+      const calcPmt = (r) => {
+        if (r === 0) return principal / months;
+        return (principal * r) / (1 - Math.pow(1 + r, -months));
+      };
+
+      let low = 0;
+      let high = 2.0;
+      while (calcPmt(high) < pmt && high < 16) {
+        high *= 2;
+      }
+
+      for (let iter = 0; iter < 60; iter++) {
+        const mid = (low + high) / 2;
+        if (calcPmt(mid) < pmt) {
+          low = mid;
+        } else {
+          high = mid;
+        }
+      }
+      return (low + high) / 2;
+    },
+
+    buildFinancingSchedule({
+      principal,
+      months,
+      calcBy = 'rate',
+      interestRate = 0,
+      interestRateUnit = 'monthly',
+      amortizationType = 'price',
+      quotedPmt = 0
+    }) {
+      const safeMonths = Math.max(1, Math.min(420, parseInt(months, 10) || 48));
+      const safePrincipal = Math.max(0, Math.round((Number(principal) || 0) * 100) / 100);
+
+      if (safePrincipal <= 0) {
+        return {
+          schedule: [0],
+          monthlyRate: 0,
+          monthlyRatePct: 0,
+          annualRatePct: 0,
+          monthlyImpact: 0,
+          firstInstallmentAmount: 0,
+          lastInstallmentAmount: 0,
+          totalInstallmentsSum: 0
+        };
+      }
+
+      if (calcBy === 'installment') {
+        const pmt = Math.max(0, Math.round((Number(quotedPmt) || 0) * 100) / 100);
+        if (pmt <= 0) {
+          return {
+            schedule: [],
+            monthlyRate: 0,
+            monthlyRatePct: 0,
+            annualRatePct: 0,
+            monthlyImpact: 0,
+            firstInstallmentAmount: 0,
+            lastInstallmentAmount: 0,
+            totalInstallmentsSum: 0
+          };
+        }
+
+        const schedule = Array(safeMonths).fill(pmt);
+        const totalInstallmentsSum = Math.round((pmt * safeMonths) * 100) / 100;
+        const monthlyRate = this.solveMonthlyRateFromPMT(safePrincipal, pmt, safeMonths);
+        const monthlyRatePct = Math.round(monthlyRate * 10000) / 100;
+        const annualRatePct = Math.round(((Math.pow(1 + monthlyRate, 12) - 1) * 100) * 100) / 100;
+
+        return {
+          schedule,
+          monthlyRate,
+          monthlyRatePct,
+          annualRatePct,
+          monthlyImpact: pmt,
+          firstInstallmentAmount: pmt,
+          lastInstallmentAmount: pmt,
+          totalInstallmentsSum
+        };
+      }
+
+      const safeRate = Math.max(0, Number(interestRate) || 0);
+      const monthlyRate = interestRateUnit === 'annual'
+        ? Math.pow(1 + safeRate / 100, 1 / 12) - 1
+        : safeRate / 100;
+      const monthlyRatePct = Math.round(monthlyRate * 10000) / 100;
+      const annualRatePct = interestRateUnit === 'annual'
+        ? Math.round(safeRate * 100) / 100
+        : Math.round(((Math.pow(1 + monthlyRate, 12) - 1) * 100) * 100) / 100;
+
+      if (amortizationType === 'sac') {
+        const amort = safePrincipal / safeMonths;
+        const schedule = [];
+        for (let k = 0; k < safeMonths; k++) {
+          const remainingPrincipal = Math.max(0, safePrincipal - (amort * k));
+          const installment = Math.round((amort + (remainingPrincipal * monthlyRate)) * 100) / 100;
+          schedule.push(installment);
+        }
+        const totalInstallmentsSum = Math.round(schedule.reduce((sum, val) => sum + val, 0) * 100) / 100;
+        return {
+          schedule,
+          monthlyRate,
+          monthlyRatePct,
+          annualRatePct,
+          monthlyImpact: schedule[0] || 0,
+          firstInstallmentAmount: schedule[0] || 0,
+          lastInstallmentAmount: schedule[schedule.length - 1] || 0,
+          totalInstallmentsSum
+        };
+      }
+
+      if (monthlyRate === 0) {
+        const { baseAmount, firstAmount } = this.computeInstallmentBreakdown(safePrincipal, safeMonths);
+        const schedule = Array.from({ length: safeMonths }, (_, idx) => (idx === 0 ? firstAmount : baseAmount));
+        return {
+          schedule,
+          monthlyRate: 0,
+          monthlyRatePct: 0,
+          annualRatePct: 0,
+          monthlyImpact: safeMonths === 1 ? firstAmount : baseAmount,
+          firstInstallmentAmount: firstAmount,
+          lastInstallmentAmount: baseAmount,
+          totalInstallmentsSum: safePrincipal
+        };
+      }
+
+      const factor = Math.pow(1 + monthlyRate, -safeMonths);
+      const pmt = Math.round(((safePrincipal * monthlyRate) / (1 - factor)) * 100) / 100;
+      const schedule = Array(safeMonths).fill(pmt);
+      const totalInstallmentsSum = Math.round((pmt * safeMonths) * 100) / 100;
+
+      return {
+        schedule,
+        monthlyRate,
+        monthlyRatePct,
+        annualRatePct,
+        monthlyImpact: pmt,
+        firstInstallmentAmount: pmt,
+        lastInstallmentAmount: pmt,
+        totalInstallmentsSum
+      };
+    },
+
     evaluateInstallmentPlan(plan, metrics) {
-      const { startPeriod, currentBase, targetAmount, remainingAmount, progressPercent } = metrics;
+      const { startPeriod, currentBase, targetAmount, effectiveEntry, remainingAmount, progressPercent } = metrics;
       const installments = Math.max(1, Math.min(36, parseInt(plan.installments, 10) || 1));
+      const downPaymentSource = plan.downPaymentSource === 'month_budget' ? 'month_budget' : 'saved';
+      const downPaymentMonthImpact = downPaymentSource === 'month_budget' ? effectiveEntry : 0;
       const { budgetLimit, currentSpent } = this.getPlanCategoryUsage(plan.category, startPeriod);
 
-      if (targetAmount > 0 && remainingAmount === 0) {
+      if (targetAmount > 0 && remainingAmount === 0 && downPaymentMonthImpact === 0) {
         const currentMonth = { ...currentBase, impact: 0, balanceAfter: currentBase.balanceBefore };
         return {
           mode: 'installment',
@@ -2435,6 +3024,8 @@
           statusMeta: this.getPlanStatusMeta('fits'),
           targetAmount,
           savedAmount: metrics.savedAmount,
+          downPaymentSource,
+          downPaymentMonthImpact: 0,
           remainingAmount: 0,
           progressPercent: 100,
           installments,
@@ -2456,12 +3047,68 @@
         };
       }
 
+      if (targetAmount > 0 && remainingAmount === 0 && downPaymentMonthImpact > 0) {
+        const balanceAfter = Math.round((currentBase.balanceBefore - downPaymentMonthImpact) * 100) / 100;
+        const currentMonth = { ...currentBase, impact: downPaymentMonthImpact, balanceAfter };
+        const incomeSharePercent = currentBase.income > 0
+          ? Math.round((downPaymentMonthImpact / currentBase.income) * 100)
+          : 100;
+        const projectedCategoryTotal = Math.round((currentSpent + downPaymentMonthImpact) * 100) / 100;
+        const categoryExceedsBudget = budgetLimit > 0 && projectedCategoryTotal > budgetLimit;
+        const categoryOverflowAmount = categoryExceedsBudget
+          ? Math.round((projectedCategoryTotal - budgetLimit) * 100) / 100
+          : 0;
+
+        let status = 'fits';
+        if (currentBase.income <= 0 || balanceAfter < 0) {
+          status = 'over';
+        } else if (balanceAfter < (currentBase.income * 0.1) || incomeSharePercent > 25 || categoryExceedsBudget) {
+          status = 'tight';
+        }
+
+        const recommendation = status === 'over'
+          ? `Pagar a entrada integral de ${Utils.formatCurrency(downPaymentMonthImpact)} com o saldo deste mês deixaria ${Utils.formatPeriod(startPeriod)} no vermelho (${Utils.formatCurrency(balanceAfter)}). Considere parcelar ou usar uma Caixinha.`
+          : (categoryExceedsBudget
+            ? `Cabe no saldo geral, mas ultrapassa em ${Utils.formatCurrency(categoryOverflowAmount)} o teto mensal da categoria ${plan.category}.`
+            : `Pagamento à vista com recursos deste mês! Sobrará ${Utils.formatCurrency(balanceAfter)} livre em ${Utils.formatPeriod(startPeriod)}.`);
+
+        return {
+          mode: 'installment',
+          status,
+          statusMeta: this.getPlanStatusMeta(status),
+          targetAmount,
+          savedAmount: metrics.savedAmount,
+          downPaymentSource,
+          downPaymentMonthImpact,
+          remainingAmount: 0,
+          progressPercent: 100,
+          installments: 1,
+          monthlyImpact: downPaymentMonthImpact,
+          firstInstallmentImpact: downPaymentMonthImpact,
+          incomeSharePercent,
+          monthsNeeded: 1,
+          targetCompletionPeriod: startPeriod,
+          currentMonth,
+          worstMonth: currentMonth,
+          deficitMonths: balanceAfter < 0 ? [currentMonth] : [],
+          timeline: [currentMonth],
+          usesRecurringHorizon: false,
+          categoryBudget: budgetLimit,
+          categorySpentCurrent: currentSpent,
+          categoryExceedsBudget,
+          categoryOverflowAmount,
+          recommendation
+        };
+      }
+
       const { baseAmount, firstAmount } = this.computeInstallmentBreakdown(remainingAmount, installments);
       const timeline = [];
       for (let i = 0; i < installments; i++) {
         const period = Utils.shiftPeriod(startPeriod, i);
         const base = this.getMonthBaseline(period);
-        const impact = i === 0 ? firstAmount : baseAmount;
+        const impact = i === 0
+          ? Math.round((firstAmount + downPaymentMonthImpact) * 100) / 100
+          : baseAmount;
         const balanceAfter = Math.round((base.balanceBefore - impact) * 100) / 100;
         timeline.push({ ...base, impact, balanceAfter });
       }
@@ -2469,12 +3116,15 @@
       const currentMonth = timeline[0];
       const worstMonth = timeline.reduce((worst, m) => (m.balanceAfter < worst.balanceAfter ? m : worst), timeline[0]);
       const deficitMonths = timeline.filter(m => m.balanceAfter < 0);
-      const monthlyImpact = installments === 1 ? firstAmount : baseAmount;
+      const monthlyImpact = installments === 1
+        ? Math.round((firstAmount + downPaymentMonthImpact) * 100) / 100
+        : baseAmount;
+      const firstInstallmentImpact = Math.round((firstAmount + downPaymentMonthImpact) * 100) / 100;
       const incomeSharePercent = currentBase.income > 0
         ? Math.round((monthlyImpact / currentBase.income) * 100)
         : (monthlyImpact > 0 ? 100 : 0);
 
-      const projectedCategoryTotal = Math.round((currentSpent + firstAmount) * 100) / 100;
+      const projectedCategoryTotal = Math.round((currentSpent + firstInstallmentImpact) * 100) / 100;
       const categoryExceedsBudget = budgetLimit > 0 && projectedCategoryTotal > budgetLimit;
       const categoryOverflowAmount = categoryExceedsBudget
         ? Math.round((projectedCategoryTotal - budgetLimit) * 100) / 100
@@ -2489,39 +3139,48 @@
 
       let recommendation = '';
       if (status === 'over') {
-        const altOptions = [2, 3, 4, 5, 6, 8, 10, 12, 15, 18, 24, 36].filter(n => n > installments);
-        let foundAlt = null;
+        const entryOnlyIssue = deficitMonths.length === 1 &&
+          deficitMonths[0].period === startPeriod &&
+          downPaymentMonthImpact > 0 &&
+          (currentMonth.balanceAfter + downPaymentMonthImpact) >= 0;
 
-        for (const k of altOptions) {
-          const { baseAmount: altBase, firstAmount: altFirst } = this.computeInstallmentBreakdown(remainingAmount, k);
-          let allNonNegative = true;
-          for (let j = 0; j < k; j++) {
-            const p = Utils.shiftPeriod(startPeriod, j);
-            const b = this.getMonthBaseline(p);
-            const imp = j === 0 ? altFirst : altBase;
-            if ((b.balanceBefore - imp) < 0) {
-              allNonNegative = false;
+        if (entryOnlyIssue) {
+          recommendation = `As parcelas cabem nos meses seguintes, mas pagar a entrada de ${Utils.formatCurrency(downPaymentMonthImpact)} com o saldo deste mês deixaria ${Utils.formatPeriod(startPeriod)} negativo. Use uma Caixinha ou diminua a entrada imediata.`;
+        } else {
+          const altOptions = [2, 3, 4, 5, 6, 8, 10, 12, 15, 18, 24, 36].filter(n => n > installments);
+          let foundAlt = null;
+
+          for (const k of altOptions) {
+            const { baseAmount: altBase, firstAmount: altFirst } = this.computeInstallmentBreakdown(remainingAmount, k);
+            let allNonNegative = true;
+            for (let j = 0; j < k; j++) {
+              const p = Utils.shiftPeriod(startPeriod, j);
+              const b = this.getMonthBaseline(p);
+              const imp = j === 0 ? (altFirst + downPaymentMonthImpact) : altBase;
+              if ((b.balanceBefore - imp) < 0) {
+                allNonNegative = false;
+                break;
+              }
+            }
+            if (allNonNegative && currentBase.income > 0) {
+              foundAlt = { count: k, perMonth: altBase };
               break;
             }
           }
-          if (allNonNegative && currentBase.income > 0) {
-            foundAlt = { count: k, perMonth: altBase };
-            break;
-          }
-        }
 
-        if (foundAlt) {
-          recommendation = `Em ${installments}x, o orçamento fecha negativo em ${Utils.formatPeriod(worstMonth.period)}. Parcelando em ${foundAlt.count}x (${Utils.formatCurrency(foundAlt.perMonth)}/mês), todos os meses permanecem no azul.`;
-        } else if (currentBase.balanceBefore > 0) {
-          const halfSlack = Math.max(1, Math.round((currentBase.balanceBefore * 0.5) * 100) / 100);
-          const saveMonths = Math.ceil(remainingAmount / halfSlack);
-          recommendation = `Mesmo aumentando o parcelamento, ${Utils.formatPeriod(worstMonth.period)} ficaria negativo. Alternativa: no modo "Juntar por mês", guardando ${Utils.formatCurrency(halfSlack)}/mês (50% da folga atual), você junta em ${saveMonths} ${saveMonths === 1 ? 'mês' : 'meses'}.`;
-        } else {
-          recommendation = 'Seu orçamento atual já fecha sem folga antes dessa compra. Reduza gastos ou reforce a renda antes de assumir novas parcelas.';
+          if (foundAlt) {
+            recommendation = `Em ${installments}x, o orçamento fecha negativo em ${Utils.formatPeriod(worstMonth.period)}. Parcelando em ${foundAlt.count}x (${Utils.formatCurrency(foundAlt.perMonth)}/mês), todos os meses permanecem no azul.`;
+          } else if (currentBase.balanceBefore > 0) {
+            const halfSlack = Math.max(1, Math.round((currentBase.balanceBefore * 0.5) * 100) / 100);
+            const saveMonths = Math.ceil(remainingAmount / halfSlack);
+            recommendation = `Mesmo aumentando o parcelamento, ${Utils.formatPeriod(worstMonth.period)} ficaria negativo. Alternativa: no modo "Juntar por mês", guardando ${Utils.formatCurrency(halfSlack)}/mês (50% da folga atual), você junta em ${saveMonths} ${saveMonths === 1 ? 'mês' : 'meses'}.`;
+          } else {
+            recommendation = 'Seu orçamento atual já fecha sem folga antes dessa compra. Reduza gastos ou reforce a renda antes de assumir novas parcelas.';
+          }
         }
       } else if (status === 'tight') {
         if (categoryExceedsBudget) {
-          recommendation = `As parcelas cabem no saldo geral, mas a primeira parcela ultrapassa em ${Utils.formatCurrency(categoryOverflowAmount)} o teto mensal da categoria ${plan.category}.`;
+          recommendation = `As parcelas cabem no saldo geral, mas o impacto inicial ultrapassa em ${Utils.formatCurrency(categoryOverflowAmount)} o teto mensal da categoria ${plan.category}.`;
         } else {
           recommendation = `Cabe no orçamento, mas a sobra em ${Utils.formatPeriod(worstMonth.period)} ficará apertada (${Utils.formatCurrency(worstMonth.balanceAfter)}). Considere aumentar a entrada ou parcelar em mais vezes.`;
         }
@@ -2535,11 +3194,13 @@
         statusMeta: this.getPlanStatusMeta(status),
         targetAmount,
         savedAmount: metrics.savedAmount,
+        downPaymentSource,
+        downPaymentMonthImpact,
         remainingAmount,
         progressPercent,
         installments,
         monthlyImpact,
-        firstInstallmentImpact: firstAmount,
+        firstInstallmentImpact,
         incomeSharePercent,
         monthsNeeded: installments,
         targetCompletionPeriod: Utils.shiftPeriod(startPeriod, installments - 1),
@@ -2548,6 +3209,308 @@
         deficitMonths,
         timeline,
         usesRecurringHorizon: timeline.some(m => m.usesRecurringBase),
+        categoryBudget: budgetLimit,
+        categorySpentCurrent: currentSpent,
+        categoryExceedsBudget,
+        categoryOverflowAmount,
+        recommendation
+      };
+    },
+
+    evaluateFinancingPlan(plan, metrics) {
+      const { startPeriod, currentBase, targetAmount, effectiveEntry, remainingAmount, progressPercent } = metrics;
+      const installments = Math.max(1, Math.min(420, parseInt(plan.installments, 10) || 48));
+      const downPaymentSource = plan.downPaymentSource === 'month_budget' ? 'month_budget' : 'saved';
+      const downPaymentMonthImpact = downPaymentSource === 'month_budget' ? effectiveEntry : 0;
+      const calcBy = plan.financingCalcBy === 'installment' ? 'installment' : 'rate';
+      const interestRateUnit = plan.interestRateUnit === 'annual' ? 'annual' : 'monthly';
+      const amortizationType = plan.amortizationType === 'sac' ? 'sac' : 'price';
+      const { budgetLimit, currentSpent } = this.getPlanCategoryUsage(plan.category, startPeriod);
+
+      if (targetAmount > 0 && remainingAmount === 0) {
+        const balanceAfter = Math.round((currentBase.balanceBefore - downPaymentMonthImpact) * 100) / 100;
+        const currentMonth = { ...currentBase, impact: downPaymentMonthImpact, balanceAfter };
+        const incomeSharePercent = currentBase.income > 0 && downPaymentMonthImpact > 0
+          ? Math.round((downPaymentMonthImpact / currentBase.income) * 100)
+          : 0;
+        const projectedCategoryTotal = Math.round((currentSpent + downPaymentMonthImpact) * 100) / 100;
+        const categoryExceedsBudget = budgetLimit > 0 && projectedCategoryTotal > budgetLimit;
+        const categoryOverflowAmount = categoryExceedsBudget
+          ? Math.round((projectedCategoryTotal - budgetLimit) * 100) / 100
+          : 0;
+
+        let status = 'fits';
+        if (downPaymentMonthImpact > 0) {
+          if (currentBase.income <= 0 || balanceAfter < 0) status = 'over';
+          else if (balanceAfter < (currentBase.income * 0.1) || incomeSharePercent > 25 || categoryExceedsBudget) status = 'tight';
+        }
+
+        const recommendation = downPaymentMonthImpact === 0
+          ? 'A entrada já cobre 100% do bem! Nenhum financiamento ou parcela será necessário.'
+          : (status === 'over'
+            ? `A entrada cobre 100% do bem, mas pagá-la integralmente com o saldo deste mês deixaria ${Utils.formatPeriod(startPeriod)} negativo (${Utils.formatCurrency(balanceAfter)}).`
+            : `A entrada cobre 100% do bem sem juros, restando ${Utils.formatCurrency(balanceAfter)} livre neste mês!`);
+
+        return {
+          mode: 'financing',
+          calcBy,
+          amortizationType,
+          status,
+          statusMeta: this.getPlanStatusMeta(status),
+          targetAmount,
+          savedAmount: metrics.savedAmount,
+          downPaymentSource,
+          downPaymentMonthImpact,
+          remainingAmount: 0,
+          financedAmount: 0,
+          progressPercent: 100,
+          installments,
+          monthlyImpact: downPaymentMonthImpact,
+          firstInstallmentImpact: downPaymentMonthImpact,
+          lastInstallmentAmount: 0,
+          totalInstallmentsSum: 0,
+          totalInterest: 0,
+          rawInterestDiff: 0,
+          totalCost: effectiveEntry,
+          interestOverPrincipalPercent: 0,
+          effectiveMonthlyRatePct: 0,
+          effectiveAnnualRatePct: 0,
+          incomeSharePercent,
+          monthsNeeded: 0,
+          targetCompletionPeriod: startPeriod,
+          currentMonth,
+          worstMonth: currentMonth,
+          deficitMonths: balanceAfter < 0 ? [currentMonth] : [],
+          timeline: [currentMonth],
+          usesRecurringHorizon: false,
+          categoryBudget: budgetLimit,
+          categorySpentCurrent: currentSpent,
+          categoryExceedsBudget,
+          categoryOverflowAmount,
+          recommendation
+        };
+      }
+
+      const scheduleData = this.buildFinancingSchedule({
+        principal: remainingAmount,
+        months: installments,
+        calcBy,
+        interestRate: plan.interestRate,
+        interestRateUnit,
+        amortizationType: calcBy === 'installment' ? 'price' : amortizationType,
+        quotedPmt: plan.financingInstallmentAmount
+      });
+
+      if (calcBy === 'installment' && scheduleData.schedule.length === 0) {
+        const balanceAfter = Math.round((currentBase.balanceBefore - downPaymentMonthImpact) * 100) / 100;
+        const currentMonth = { ...currentBase, impact: downPaymentMonthImpact, balanceAfter };
+        const status = currentBase.balanceBefore > 0 ? 'tight' : 'over';
+        return {
+          mode: 'financing',
+          calcBy,
+          amortizationType: 'price',
+          status,
+          statusMeta: this.getPlanStatusMeta(status),
+          targetAmount,
+          savedAmount: metrics.savedAmount,
+          downPaymentSource,
+          downPaymentMonthImpact,
+          remainingAmount,
+          financedAmount: remainingAmount,
+          progressPercent,
+          installments,
+          monthlyImpact: 0,
+          firstInstallmentImpact: downPaymentMonthImpact,
+          lastInstallmentAmount: 0,
+          totalInstallmentsSum: 0,
+          totalInterest: 0,
+          rawInterestDiff: 0,
+          totalCost: effectiveEntry,
+          interestOverPrincipalPercent: 0,
+          effectiveMonthlyRatePct: 0,
+          effectiveAnnualRatePct: 0,
+          incomeSharePercent: 0,
+          monthsNeeded: installments,
+          targetCompletionPeriod: Utils.shiftPeriod(startPeriod, installments - 1),
+          currentMonth,
+          worstMonth: currentMonth,
+          deficitMonths: balanceAfter < 0 ? [currentMonth] : [],
+          timeline: [currentMonth],
+          usesRecurringHorizon: false,
+          categoryBudget: budgetLimit,
+          categorySpentCurrent: currentSpent,
+          categoryExceedsBudget: false,
+          categoryOverflowAmount: 0,
+          recommendation: 'Informe o valor da parcela proposta pelo banco ou loja para calcular juros, taxa implícita e impacto mensal.'
+        };
+      }
+
+      const {
+        schedule,
+        monthlyImpact,
+        firstInstallmentAmount,
+        lastInstallmentAmount,
+        totalInstallmentsSum,
+        monthlyRatePct,
+        annualRatePct
+      } = scheduleData;
+
+      const rawInterestDiff = Math.round((totalInstallmentsSum - remainingAmount) * 100) / 100;
+      const totalInterest = Math.max(0, rawInterestDiff);
+      const totalCost = Math.round((effectiveEntry + totalInstallmentsSum) * 100) / 100;
+      const interestOverPrincipalPercent = remainingAmount > 0
+        ? Math.round((totalInterest / remainingAmount) * 1000) / 10
+        : 0;
+
+      const specialPeriods = this.getSpecialPeriodsSet();
+      const genericBase = this.getGenericFutureBaseline(startPeriod);
+
+      const timelinePreview = [];
+      let worstMonth = null;
+      const deficitMonths = [];
+      let usesRecurringHorizon = false;
+
+      for (let i = 0; i < installments; i++) {
+        const period = Utils.shiftPeriod(startPeriod, i);
+        const base = (i < 12 || specialPeriods.has(period))
+          ? this.getMonthBaseline(period)
+          : { ...genericBase, period };
+
+        if (base.usesRecurringBase) usesRecurringHorizon = true;
+
+        const installmentVal = schedule[i] ?? monthlyImpact;
+        const impact = i === 0
+          ? Math.round((installmentVal + downPaymentMonthImpact) * 100) / 100
+          : installmentVal;
+        const balanceAfter = Math.round((base.balanceBefore - impact) * 100) / 100;
+        const point = { ...base, impact, balanceAfter };
+
+        if (i < 12) timelinePreview.push(point);
+        if (!worstMonth || point.balanceAfter < worstMonth.balanceAfter) worstMonth = point;
+        if (point.balanceAfter < 0) deficitMonths.push(point);
+      }
+
+      const currentMonth = timelinePreview[0];
+      const firstInstallmentImpact = currentMonth.impact;
+      const incomeSharePercent = currentBase.income > 0
+        ? Math.round((monthlyImpact / currentBase.income) * 100)
+        : (monthlyImpact > 0 ? 100 : 0);
+
+      const projectedCategoryTotal = Math.round((currentSpent + firstInstallmentImpact) * 100) / 100;
+      const categoryExceedsBudget = budgetLimit > 0 && projectedCategoryTotal > budgetLimit;
+      const categoryOverflowAmount = categoryExceedsBudget
+        ? Math.round((projectedCategoryTotal - budgetLimit) * 100) / 100
+        : 0;
+
+      let status = 'fits';
+      if (currentBase.income <= 0 || deficitMonths.length > 0) {
+        status = 'over';
+      } else if (worstMonth.balanceAfter < (currentBase.income * 0.1) || incomeSharePercent > 25 || categoryExceedsBudget) {
+        status = 'tight';
+      }
+
+      let recommendation = '';
+      if (calcBy === 'installment' && rawInterestDiff < -0.01) {
+        recommendation = `Atenção: ${installments}x de ${Utils.formatCurrency(monthlyImpact)} soma ${Utils.formatCurrency(totalInstallmentsSum)}, abaixo do valor financiado (${Utils.formatCurrency(remainingAmount)}). Confira o valor do bem, entrada ou prazo.`;
+      } else if (status === 'over') {
+        const entryOnlyIssue = deficitMonths.length === 1 &&
+          deficitMonths[0].period === startPeriod &&
+          downPaymentMonthImpact > 0 &&
+          (currentMonth.balanceAfter + downPaymentMonthImpact) >= 0;
+
+        if (entryOnlyIssue) {
+          recommendation = `A parcela de ${Utils.formatCurrency(monthlyImpact)}/mês cabe nos meses seguintes, mas pagar a entrada de ${Utils.formatCurrency(downPaymentMonthImpact)} com o saldo deste mês deixaria ${Utils.formatPeriod(startPeriod)} negativo. Use uma Caixinha ou junte a entrada antes.`;
+        } else if (calcBy === 'rate' && currentBase.income > 0) {
+          const altTerms = [12, 18, 24, 36, 48, 60, 72, 84, 96, 120, 180, 240, 360].filter(n => n > installments);
+          let foundAlt = null;
+
+          for (const k of altTerms) {
+            const altSched = this.buildFinancingSchedule({
+              principal: remainingAmount,
+              months: k,
+              calcBy: 'rate',
+              interestRate: plan.interestRate,
+              interestRateUnit,
+              amortizationType
+            });
+
+            let allNonNegative = true;
+            for (let j = 0; j < k; j++) {
+              const p = Utils.shiftPeriod(startPeriod, j);
+              const b = (j < 12 || specialPeriods.has(p))
+                ? this.getMonthBaseline(p)
+                : genericBase;
+              const imp = j === 0
+                ? ((altSched.schedule[0] ?? altSched.monthlyImpact) + downPaymentMonthImpact)
+                : (altSched.schedule[j] ?? altSched.monthlyImpact);
+              if ((b.balanceBefore - imp) < 0) {
+                allNonNegative = false;
+                break;
+              }
+            }
+            if (allNonNegative) {
+              const altInterest = Math.max(0, Math.round((altSched.totalInstallmentsSum - remainingAmount) * 100) / 100);
+              foundAlt = { count: k, perMonth: altSched.monthlyImpact, totalInterest: altInterest };
+              break;
+            }
+          }
+
+          if (foundAlt) {
+            recommendation = `Em ${installments}x, o orçamento fecha negativo em ${Utils.formatPeriod(worstMonth.period)}. Em ${foundAlt.count}x (${Utils.formatCurrency(foundAlt.perMonth)}/mês), todos os meses ficam no azul (juros totais de ${Utils.formatCurrency(foundAlt.totalInterest)}).`;
+          } else {
+            recommendation = `A parcela de ${Utils.formatCurrency(monthlyImpact)}/mês deixa ${Utils.formatPeriod(worstMonth.period)} negativo (${Utils.formatCurrency(worstMonth.balanceAfter)}). Aumente o valor de entrada ou busque juros menores.`;
+          }
+        } else {
+          recommendation = currentBase.income <= 0
+            ? 'Cadastre a renda mensal para avaliar se a parcela do financiamento cabe no orçamento.'
+            : `A parcela de ${Utils.formatCurrency(monthlyImpact)}/mês deixa ${Utils.formatPeriod(worstMonth.period)} no vermelho (${Utils.formatCurrency(worstMonth.balanceAfter)}). Negocie prazo maior ou aumente a entrada.`;
+        }
+      } else if (status === 'tight') {
+        if (categoryExceedsBudget) {
+          recommendation = `A parcela cabe no saldo geral, mas o impacto inicial ultrapassa em ${Utils.formatCurrency(categoryOverflowAmount)} o teto mensal da categoria ${plan.category}.`;
+        } else {
+          recommendation = `Financiamento apertado: restará ${Utils.formatCurrency(worstMonth.balanceAfter)} livre em ${Utils.formatPeriod(worstMonth.period)} (${incomeSharePercent}% da renda comprometida). Aumentar a entrada aliviaria o mês e reduziria ${Utils.formatCurrency(totalInterest)} de juros.`;
+        }
+      } else {
+        const interestInsight = totalInterest > 0
+          ? `Você pagará +${Utils.formatCurrency(totalInterest)} em juros (${interestOverPrincipalPercent}% sobre o valor financiado).`
+          : 'Financiamento simulado com taxa zero de juros.';
+        recommendation = `Financiamento viável! Menor sobra prevista: ${Utils.formatCurrency(worstMonth.balanceAfter)} (${Utils.formatPeriod(worstMonth.period)}).${interestInsight ? ` ${interestInsight}` : ''}`;
+      }
+
+      return {
+        mode: 'financing',
+        calcBy,
+        amortizationType: calcBy === 'installment' ? 'price' : amortizationType,
+        status,
+        statusMeta: this.getPlanStatusMeta(status),
+        targetAmount,
+        savedAmount: metrics.savedAmount,
+        downPaymentSource,
+        downPaymentMonthImpact,
+        remainingAmount,
+        financedAmount: remainingAmount,
+        progressPercent,
+        installments,
+        monthlyImpact,
+        firstInstallmentAmount,
+        firstInstallmentImpact,
+        lastInstallmentAmount,
+        totalInstallmentsSum,
+        totalInterest,
+        rawInterestDiff,
+        totalCost,
+        interestOverPrincipalPercent,
+        effectiveMonthlyRatePct: monthlyRatePct,
+        effectiveAnnualRatePct: annualRatePct,
+        incomeSharePercent,
+        monthsNeeded: installments,
+        targetCompletionPeriod: Utils.shiftPeriod(startPeriod, installments - 1),
+        currentMonth,
+        worstMonth,
+        deficitMonths,
+        timeline: timelinePreview,
+        usesRecurringHorizon,
         categoryBudget: budgetLimit,
         categorySpentCurrent: currentSpent,
         categoryExceedsBudget,
@@ -2697,6 +3660,7 @@
       const currentBase = this.getMonthBaseline(startPeriod);
       const targetAmount = Math.max(0, Math.round((Number(plan.targetAmount) || 0) * 100) / 100);
       const savedAmount = Math.max(0, Math.round((Number(plan.savedAmount) || 0) * 100) / 100);
+      const effectiveEntry = targetAmount > 0 ? Math.min(savedAmount, targetAmount) : savedAmount;
       const remainingAmount = Math.max(0, Math.round((targetAmount - savedAmount) * 100) / 100);
       const progressPercent = targetAmount > 0
         ? Math.min(100, Math.round((savedAmount / targetAmount) * 100))
@@ -2707,13 +3671,14 @@
         currentBase,
         targetAmount,
         savedAmount,
+        effectiveEntry,
         remainingAmount,
         progressPercent
       };
 
-      return plan.mode === 'save'
-        ? this.evaluateSavePlan(plan, metrics)
-        : this.evaluateInstallmentPlan(plan, metrics);
+      if (plan.mode === 'save') return this.evaluateSavePlan(plan, metrics);
+      if (plan.mode === 'financing') return this.evaluateFinancingPlan(plan, metrics);
+      return this.evaluateInstallmentPlan(plan, metrics);
     },
 
     renderPlanning() {
@@ -2767,9 +3732,14 @@
                 </div>
               </div>
             `;
+          } else if (plan.mode === 'financing') {
+            const condLabel = evaluation.remainingAmount === 0
+              ? 'Coberto pela entrada'
+              : (evaluation.monthlyImpact > 0 ? `Financ. ${evaluation.installments}x ${Utils.formatCurrency(evaluation.monthlyImpact)}` : `${evaluation.installments}x (defina parcela)`);
+            subline = `<span>Bem: <strong class="text-slate-200">${Utils.formatCurrency(plan.targetAmount)}</strong></span><span class="font-medium text-indigo-300">${condLabel}</span>`;
           } else {
             const condLabel = evaluation.remainingAmount === 0
-              ? 'Coberto pela reserva'
+              ? (evaluation.downPaymentMonthImpact > 0 ? `À vista (mês): ${Utils.formatCurrency(evaluation.downPaymentMonthImpact)}` : 'Coberto pela reserva')
               : (plan.installments > 1 ? `${plan.installments}x de ${Utils.formatCurrency(evaluation.monthlyImpact)}` : `À vista: ${Utils.formatCurrency(evaluation.monthlyImpact)}`);
             subline = `<span>Alvo: <strong class="text-slate-200">${Utils.formatCurrency(plan.targetAmount)}</strong></span><span class="font-medium text-slate-300">${condLabel}</span>`;
           }
@@ -2814,6 +3784,7 @@
 
       if (this.planningModal && !this.planningModal.classList.contains('hidden')) {
         this.renderPlanningModalList();
+        this.populatePlanReserveSelector();
         this.updatePlanSimulationPreview();
       }
     },
@@ -2824,10 +3795,65 @@
       } else {
         this.resetPlanningForm();
       }
+      this.populatePlanReserveSelector();
       this.renderPlanningModalList();
       this.updatePlanSimulationPreview();
       this.openModal(this.planningModal);
       this.planTitleInput?.focus();
+    },
+
+    populatePlanReserveSelector() {
+      if (!this.planReserveAssistBox || !this.planReserveSourceSelect) return;
+
+      const reserves = (this.state.reserves || []).filter(r => (r.balance || 0) > 0);
+      const total = this.getTotalReservesBalance();
+
+      if (reserves.length === 0 || total <= 0) {
+        this.planReserveAssistBox.classList.add('hidden');
+        this.planReserveSourceSelect.innerHTML = '';
+        return;
+      }
+
+      const prevSelected = this.planReserveSourceSelect.value;
+      let optionsHtml = `<option value="__all__">Todas as caixinhas (${Utils.formatCurrency(total)})</option>`;
+      reserves.forEach(r => {
+        optionsHtml += `<option value="${r.id}">${Utils.escapeHTML(r.title)} (${Utils.formatCurrency(r.balance)})</option>`;
+      });
+
+      this.planReserveSourceSelect.innerHTML = optionsHtml;
+      if (prevSelected && Array.from(this.planReserveSourceSelect.options).some(o => o.value === prevSelected)) {
+        this.planReserveSourceSelect.value = prevSelected;
+      } else {
+        this.planReserveSourceSelect.value = '__all__';
+      }
+      this.planReserveAssistBox.classList.remove('hidden');
+    },
+
+    applyReserveToPlan() {
+      const source = this.planReserveSourceSelect?.value || '__all__';
+      let available = 0;
+
+      if (source === '__all__') {
+        available = this.getTotalReservesBalance();
+      } else {
+        const reserve = (this.state.reserves || []).find(r => r.id === source);
+        available = reserve ? (reserve.balance || 0) : 0;
+      }
+
+      if (available <= 0) {
+        Toast.show('A caixinha selecionada não possui saldo disponível.', 'warning');
+        return;
+      }
+
+      const targetAmount = Utils.parseCurrency(this.planTargetAmountInput?.value || '0');
+      const applied = targetAmount > 0 ? Math.min(available, targetAmount) : available;
+
+      if (this.planSavedAmountInput) {
+        this.planSavedAmountInput.value = Utils.formatNumberToInput(applied);
+      }
+      this.setPlanDownPaymentSource('saved', false);
+      this.updatePlanSimulationPreview();
+      Toast.show(`Valor de ${Utils.formatCurrency(applied)} aplicado como entrada já guardada.`, 'success');
     },
 
     resetPlanningForm() {
@@ -2843,7 +3869,15 @@
       if (this.planSavedAmountInput) this.planSavedAmountInput.value = '0,00';
       if (this.planInstallmentsSelect) this.planInstallmentsSelect.value = '10';
       if (this.planPaymentMethodSelect) this.planPaymentMethodSelect.value = 'Cartão de Crédito';
+      if (this.planFinancingMonthsInput) this.planFinancingMonthsInput.value = '48';
+      if (this.planFinancingDueDayInput) this.planFinancingDueDayInput.value = '10';
+      if (this.planInterestRateInput) this.planInterestRateInput.value = '';
+      if (this.planInterestRateUnitSelect) this.planInterestRateUnitSelect.value = 'monthly';
+      if (this.planAmortizationSelect) this.planAmortizationSelect.value = 'price';
+      if (this.planFinancingInstallmentInput) this.planFinancingInstallmentInput.value = '0,00';
       if (this.planMonthlyContributionInput) this.planMonthlyContributionInput.value = '0,00';
+      this.setPlanDownPaymentSource('saved', false);
+      this.setPlanFinancingCalcBy('rate', false);
       this.setPlanMode('installment', false);
     },
 
@@ -2864,7 +3898,7 @@
       if (this.planSavedAmountInput) this.planSavedAmountInput.value = Utils.formatNumberToInput(plan.savedAmount);
 
       if (this.planInstallmentsSelect) {
-        const instStr = String(plan.installments || 10);
+        const instStr = String(plan.mode === 'financing' ? 10 : (plan.installments || 10));
         const hasOption = Array.from(this.planInstallmentsSelect.options).some(opt => opt.value === instStr);
         if (!hasOption) {
           const opt = document.createElement('option');
@@ -2878,17 +3912,38 @@
       if (this.planPaymentMethodSelect) {
         this.planPaymentMethodSelect.value = METHOD_ICONS[plan.paymentMethod] ? plan.paymentMethod : 'Cartão de Crédito';
       }
+      if (this.planFinancingMonthsInput) {
+        this.planFinancingMonthsInput.value = String(plan.mode === 'financing' ? (plan.installments || 48) : 48);
+      }
+      if (this.planFinancingDueDayInput) {
+        this.planFinancingDueDayInput.value = String(plan.financingDueDay || 10);
+      }
+      if (this.planInterestRateInput) {
+        this.planInterestRateInput.value = plan.interestRate > 0 ? String(plan.interestRate).replace('.', ',') : '';
+      }
+      if (this.planInterestRateUnitSelect) {
+        this.planInterestRateUnitSelect.value = plan.interestRateUnit === 'annual' ? 'annual' : 'monthly';
+      }
+      if (this.planAmortizationSelect) {
+        this.planAmortizationSelect.value = plan.amortizationType === 'sac' ? 'sac' : 'price';
+      }
+      if (this.planFinancingInstallmentInput) {
+        this.planFinancingInstallmentInput.value = Utils.formatNumberToInput(plan.financingInstallmentAmount || 0);
+      }
       if (this.planMonthlyContributionInput) {
         this.planMonthlyContributionInput.value = Utils.formatNumberToInput(plan.monthlyContribution || 0);
       }
 
+      this.setPlanDownPaymentSource(plan.downPaymentSource || 'saved', false);
+      this.setPlanFinancingCalcBy(plan.financingCalcBy || 'rate', false);
       this.setPlanMode(plan.mode, false);
       this.updatePlanSimulationPreview();
       if (this.planningModalBody) this.planningModalBody.scrollTop = 0;
     },
 
     setPlanMode(mode, updatePreview = true) {
-      const normalizedMode = mode === 'save' ? 'save' : 'installment';
+      const validModes = new Set(['installment', 'financing', 'save']);
+      const normalizedMode = validModes.has(mode) ? mode : 'installment';
       if (this.planModeInput) this.planModeInput.value = normalizedMode;
 
       this.planModeBtns.forEach(btn => {
@@ -2902,11 +3957,30 @@
         }
       });
 
+      if (this.planSavedAmountLabel) {
+        if (normalizedMode === 'save') {
+          this.planSavedAmountLabel.textContent = 'Quanto já tenho guardado';
+        } else if (normalizedMode === 'financing') {
+          this.planSavedAmountLabel.textContent = 'Valor de entrada';
+        } else {
+          this.planSavedAmountLabel.textContent = 'Valor de entrada / Já guardado';
+        }
+      }
+
       if (normalizedMode === 'save') {
+        this.planDownPaymentSourceBox?.classList.add('hidden');
         this.planInstallmentFields?.classList.add('hidden');
+        this.planFinancingFields?.classList.add('hidden');
         this.planSaveFields?.classList.remove('hidden');
+      } else if (normalizedMode === 'financing') {
+        this.planDownPaymentSourceBox?.classList.remove('hidden');
+        this.planInstallmentFields?.classList.add('hidden');
+        this.planFinancingFields?.classList.remove('hidden');
+        this.planSaveFields?.classList.add('hidden');
       } else {
+        this.planDownPaymentSourceBox?.classList.remove('hidden');
         this.planInstallmentFields?.classList.remove('hidden');
+        this.planFinancingFields?.classList.add('hidden');
         this.planSaveFields?.classList.add('hidden');
       }
 
@@ -2915,16 +3989,110 @@
       }
     },
 
+    setPlanDownPaymentSource(source, updatePreview = true) {
+      const normalizedSource = source === 'month_budget' ? 'month_budget' : 'saved';
+      if (this.planDownPaymentSourceInput) this.planDownPaymentSourceInput.value = normalizedSource;
+
+      this.planDownPaymentSourceBtns.forEach(btn => {
+        const isActive = btn.getAttribute('data-plan-entry-source') === normalizedSource;
+        btn.classList.remove(
+          'bg-indigo-600/20', 'text-indigo-200', 'border-indigo-500/40',
+          'bg-slate-900', 'text-slate-400', 'hover:text-slate-200', 'border-slate-700'
+        );
+        if (isActive) {
+          btn.classList.add('bg-indigo-600/20', 'text-indigo-200', 'border-indigo-500/40');
+        } else {
+          btn.classList.add('bg-slate-900', 'text-slate-400', 'hover:text-slate-200', 'border-slate-700');
+        }
+      });
+
+      if (this.planDownPaymentSourceHint) {
+        this.planDownPaymentSourceHint.textContent = normalizedSource === 'month_budget'
+          ? 'Soma a entrada ao impacto deste mês na simulação e lança nos Gastos Diários ao efetivar.'
+          : 'Considera a entrada já separada fora do fluxo deste mês (apenas reduz o saldo parcelado/financiado).';
+      }
+
+      if (updatePreview) {
+        this.updatePlanSimulationPreview();
+      }
+    },
+
+    applyPlanDownPaymentPercent(pct) {
+      const targetAmount = Utils.parseCurrency(this.planTargetAmountInput?.value || '0');
+      if (targetAmount <= 0) {
+        Toast.show('Informe o valor total do bem / compra primeiro para calcular a entrada.', 'warning');
+        this.planTargetAmountInput?.focus();
+        return;
+      }
+
+      const safePct = Math.max(0, Math.min(100, Number(pct) || 0));
+      const entryAmount = Math.round((targetAmount * (safePct / 100)) * 100) / 100;
+      if (this.planSavedAmountInput) {
+        this.planSavedAmountInput.value = Utils.formatNumberToInput(entryAmount);
+      }
+      this.updatePlanSimulationPreview();
+    },
+
+    setPlanFinancingCalcBy(calcBy, updatePreview = true) {
+      const normalized = calcBy === 'installment' ? 'installment' : 'rate';
+      if (this.planFinancingCalcByInput) this.planFinancingCalcByInput.value = normalized;
+
+      this.planFinancingCalcBtns.forEach(btn => {
+        const isActive = btn.getAttribute('data-plan-fin-calc') === normalized;
+        if (isActive) {
+          btn.classList.add('bg-indigo-600', 'text-white');
+          btn.classList.remove('text-slate-400', 'hover:text-white');
+        } else {
+          btn.classList.remove('bg-indigo-600', 'text-white');
+          btn.classList.add('text-slate-400', 'hover:text-white');
+        }
+      });
+
+      if (normalized === 'installment') {
+        this.planFinancingRateFields?.classList.add('hidden');
+        this.planFinancingInstallmentFields?.classList.remove('hidden');
+      } else {
+        this.planFinancingRateFields?.classList.remove('hidden');
+        this.planFinancingInstallmentFields?.classList.add('hidden');
+      }
+
+      if (updatePreview) {
+        this.updatePlanSimulationPreview();
+      }
+    },
+
     getPlanFormDraft() {
+      const rawMode = this.planModeInput?.value;
+      const mode = rawMode === 'save' ? 'save' : (rawMode === 'financing' ? 'financing' : 'installment');
+      const rawInstallments = mode === 'financing'
+        ? parseInt(this.planFinancingMonthsInput?.value || '48', 10)
+        : parseInt(this.planInstallmentsSelect?.value || '10', 10);
+      const maxInst = mode === 'financing' ? 420 : 36;
+      const defaultInst = mode === 'financing' ? 48 : 10;
+      const installments = (Number.isFinite(rawInstallments) && rawInstallments >= 1)
+        ? Math.min(maxInst, rawInstallments)
+        : defaultInst;
+      const rawDueDay = parseInt(this.planFinancingDueDayInput?.value || '10', 10);
+      const financingDueDay = (Number.isFinite(rawDueDay) && rawDueDay >= 1)
+        ? Math.min(31, rawDueDay)
+        : 10;
+
       return {
         id: this.planEditId?.value || '',
         title: (this.planTitleInput?.value || '').trim(),
         category: this.planCategorySelect?.value || 'Compras',
-        mode: (this.planModeInput?.value === 'save') ? 'save' : 'installment',
+        mode,
         targetAmount: Utils.parseCurrency(this.planTargetAmountInput?.value || '0'),
         savedAmount: Utils.parseCurrency(this.planSavedAmountInput?.value || '0'),
-        installments: parseInt(this.planInstallmentsSelect?.value || '10', 10) || 10,
+        downPaymentSource: this.planDownPaymentSourceInput?.value === 'month_budget' ? 'month_budget' : 'saved',
+        installments,
         paymentMethod: this.planPaymentMethodSelect?.value || 'Cartão de Crédito',
+        financingCalcBy: this.planFinancingCalcByInput?.value === 'installment' ? 'installment' : 'rate',
+        interestRate: Utils.parsePercent(this.planInterestRateInput?.value || '0'),
+        interestRateUnit: this.planInterestRateUnitSelect?.value === 'annual' ? 'annual' : 'monthly',
+        amortizationType: this.planAmortizationSelect?.value === 'sac' ? 'sac' : 'price',
+        financingInstallmentAmount: Utils.parseCurrency(this.planFinancingInstallmentInput?.value || '0'),
+        financingDueDay,
         monthlyContribution: Utils.parseCurrency(this.planMonthlyContributionInput?.value || '0')
       };
     },
@@ -2994,9 +4162,17 @@
         ? (ev.remainingAmount === 0
           ? 'Valor já acumulado!'
           : (ev.monthsNeeded ? `${ev.monthsNeeded} ${ev.monthsNeeded === 1 ? 'mês' : 'meses'} guardando ${Utils.formatCurrency(ev.monthlyImpact)}/mês` : 'Aporte mensal não definido'))
-        : (ev.remainingAmount === 0
-          ? '100% coberto pela entrada'
-          : (ev.installments > 1 ? `${ev.installments}x de ${Utils.formatCurrency(ev.monthlyImpact)}` : `À vista: ${Utils.formatCurrency(ev.monthlyImpact)}`));
+        : (ev.mode === 'financing'
+          ? (ev.remainingAmount === 0
+            ? '100% coberto pela entrada'
+            : (ev.monthlyImpact <= 0
+              ? 'Informe o valor da parcela'
+              : (ev.amortizationType === 'sac' && ev.installments > 1 && ev.lastInstallmentAmount !== ev.monthlyImpact
+                ? `${ev.installments}x SAC: ${Utils.formatCurrency(ev.monthlyImpact)} até ${Utils.formatCurrency(ev.lastInstallmentAmount)}`
+                : `${ev.installments}x de ${Utils.formatCurrency(ev.monthlyImpact)}`)))
+          : (ev.remainingAmount === 0
+            ? (ev.downPaymentMonthImpact > 0 ? `À vista (mês): ${Utils.formatCurrency(ev.downPaymentMonthImpact)}` : '100% coberto pela entrada')
+            : (ev.installments > 1 ? `${ev.installments}x de ${Utils.formatCurrency(ev.monthlyImpact)}` : `À vista: ${Utils.formatCurrency(ev.monthlyImpact)}`)));
 
       const thirdMetricLabel = ev.mode === 'save'
         ? 'Previsão de compra'
@@ -3006,17 +4182,46 @@
         : Utils.formatCurrency(ev.worstMonth.balanceAfter);
       const thirdMetricClass = ev.mode === 'save' ? 'text-indigo-300' : worstClass;
 
+      const financingDetailsHtml = (ev.mode === 'financing' && ev.remainingAmount > 0 && ev.monthlyImpact > 0) ? `
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div class="p-2 rounded-lg bg-slate-900/70 border border-slate-800/90">
+            <span class="block text-[10px] text-slate-400">Valor financiado</span>
+            <span class="font-bold text-slate-100 text-[11px]">${Utils.formatCurrency(ev.financedAmount)}</span>
+            <span class="block text-[10px] text-slate-500">Entrada: ${Utils.formatCurrency(ev.savedAmount)}</span>
+          </div>
+          <div class="p-2 rounded-lg bg-slate-900/70 border border-slate-800/90">
+            <span class="block text-[10px] text-slate-400">Total em juros</span>
+            <span class="font-bold ${ev.totalInterest > 0 ? 'text-amber-300' : 'text-emerald-300'} text-[11px]">+${Utils.formatCurrency(ev.totalInterest)}</span>
+            <span class="block text-[10px] text-slate-500">+${ev.interestOverPrincipalPercent}% s/ financiado</span>
+          </div>
+          <div class="p-2 rounded-lg bg-slate-900/70 border border-slate-800/90">
+            <span class="block text-[10px] text-slate-400">Custo total final</span>
+            <span class="font-bold text-indigo-300 text-[11px]">${Utils.formatCurrency(ev.totalCost)}</span>
+            <span class="block text-[10px] text-slate-500">Entrada + parcelas</span>
+          </div>
+          <div class="p-2 rounded-lg bg-slate-900/70 border border-slate-800/90">
+            <span class="block text-[10px] text-slate-400">Taxa efetiva (${ev.amortizationType.toUpperCase()})</span>
+            <span class="font-bold text-slate-100 text-[11px]">${ev.effectiveMonthlyRatePct.toFixed(2).replace('.', ',')}% a.m.</span>
+            <span class="block text-[10px] text-slate-500">${ev.effectiveAnnualRatePct.toFixed(2).replace('.', ',')}% a.a.</span>
+          </div>
+        </div>
+      ` : '';
+
       const progressBarHtml = (ev.mode === 'save' || ev.savedAmount > 0) ? `
         <div class="space-y-1 pt-0.5">
           <div class="flex items-center justify-between text-[11px] text-slate-400">
-            <span>Reserva: <strong class="text-slate-200">${Utils.formatCurrency(ev.savedAmount)}</strong> de ${Utils.formatCurrency(ev.targetAmount)}</span>
-            <span>Falta: <strong class="text-slate-200">${Utils.formatCurrency(ev.remainingAmount)}</strong> (${ev.progressPercent}%)</span>
+            <span>${ev.mode === 'save' ? 'Reserva' : 'Entrada'}: <strong class="text-slate-200">${Utils.formatCurrency(ev.savedAmount)}</strong> de ${Utils.formatCurrency(ev.targetAmount)}</span>
+            <span>${ev.mode === 'financing' ? 'Financiado' : 'Falta'}: <strong class="text-slate-200">${Utils.formatCurrency(ev.remainingAmount)}</strong> (${ev.progressPercent}%)</span>
           </div>
           <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
             <div class="h-full rounded-full transition-all duration-300" style="width: ${ev.progressPercent}%; background-color: ${meta.barColor};"></div>
           </div>
         </div>
       ` : '';
+
+      const entryImpactSubline = (ev.downPaymentMonthImpact > 0)
+        ? `<span class="block text-[10px] text-amber-300/90">Inclui entrada de ${Utils.formatCurrency(ev.downPaymentMonthImpact)} no mês 1</span>`
+        : `<span class="block text-[10px] text-slate-500">Antes: ${Utils.formatCurrency(currentBase.balanceBefore)}</span>`;
 
       const categoryWarningHtml = ev.categoryExceedsBudget ? `
         <div class="p-2 rounded-lg bg-amber-500/10 border border-amber-500/25 text-amber-200 text-[11px] flex items-start gap-2">
@@ -3029,7 +4234,7 @@
       const timelineChipsHtml = timelineSlice.length > 1 ? `
         <div class="pt-1 space-y-1">
           <div class="flex items-center justify-between text-[10px] text-slate-400 uppercase tracking-wider font-semibold">
-            <span>Projeção de saldo pós-compromisso${ev.timeline.length > 6 ? ` (primeiros 6 de ${ev.timeline.length} meses)` : ''}</span>
+            <span>Projeção de saldo pós-compromisso${ev.installments > 6 ? ` (primeiros 6 de ${ev.installments} meses)` : ''}</span>
           </div>
           <div class="flex flex-wrap gap-1.5">
             ${timelineSlice.map(m => {
@@ -3060,14 +4265,14 @@
 
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <div class="p-2 rounded-lg bg-slate-900/80 border border-slate-800">
-              <span class="block text-[10px] text-slate-400">Peso mensal</span>
+              <span class="block text-[10px] text-slate-400">${ev.mode === 'financing' && ev.amortizationType === 'sac' ? '1ª parcela' : 'Peso mensal'}</span>
               <span class="font-bold text-slate-100">${Utils.formatCurrency(ev.monthlyImpact)}</span>
               <span class="text-[10px] text-slate-400 ml-1">(${ev.incomeSharePercent}% renda)</span>
             </div>
             <div class="p-2 rounded-lg bg-slate-900/80 border border-slate-800">
               <span class="block text-[10px] text-slate-400">Saldo do mês após</span>
               <span class="font-bold ${afterClass}">${Utils.formatCurrency(balanceAfterCurrent)}</span>
-              <span class="block text-[10px] text-slate-500">Antes: ${Utils.formatCurrency(currentBase.balanceBefore)}</span>
+              ${entryImpactSubline}
             </div>
             <div class="p-2 rounded-lg bg-slate-900/80 border border-slate-800">
               <span class="block text-[10px] text-slate-400">${thirdMetricLabel}</span>
@@ -3075,6 +4280,7 @@
             </div>
           </div>
 
+          ${financingDetailsHtml}
           ${progressBarHtml}
           ${categoryWarningHtml}
 
@@ -3118,7 +4324,15 @@
         const isCompleted = plan.status === 'completed';
         const ev = isCompleted ? null : this.evaluatePlan(plan);
         const statusMeta = isCompleted ? this.getPlanStatusMeta('completed') : ev.statusMeta;
-        const modeBadge = plan.mode === 'save' ? 'Juntar/mês' : (plan.installments > 1 ? `Parcelado (${plan.installments}x)` : 'À vista (1x)');
+        const modeBadge = plan.mode === 'save'
+          ? 'Juntar/mês'
+          : (plan.mode === 'financing'
+            ? `Financ. (${plan.installments}x)`
+            : (plan.installments > 1 ? `Parcelado (${plan.installments}x)` : 'À vista (1x)'));
+
+        const subtitleLine = plan.mode === 'financing'
+          ? `${Utils.escapeHTML(plan.category)} • Conta Fixa (dia ${plan.financingDueDay || 10})`
+          : `${Utils.escapeHTML(plan.category)} • ${Utils.escapeHTML(plan.paymentMethod)}`;
 
         let detailLine = '';
         let progressLine = '';
@@ -3140,11 +4354,22 @@
               </div>
             </div>
           `;
+        } else if (plan.mode === 'financing') {
+          const entryNote = plan.savedAmount > 0
+            ? ` • Entrada: <strong class="text-slate-200">${Utils.formatCurrency(plan.savedAmount)}</strong> (${plan.downPaymentSource === 'month_budget' ? 'no mês' : 'guardada'})`
+            : '';
+          const finSummary = ev.remainingAmount === 0
+            ? '100% coberto pela entrada'
+            : `${ev.installments}x de <strong class="text-indigo-300">${Utils.formatCurrency(ev.monthlyImpact)}</strong> • Juros: <span class="text-amber-300">+${Utils.formatCurrency(ev.totalInterest)}</span> (${ev.effectiveMonthlyRatePct.toFixed(2).replace('.', ',')}% a.m.) • Total: <strong class="text-slate-200">${Utils.formatCurrency(ev.totalCost)}</strong>`;
+          detailLine = `Bem: <strong class="text-slate-200">${Utils.formatCurrency(plan.targetAmount)}</strong>${entryNote}<br/>${finSummary} • Pior mês: <span class="${ev.worstMonth.balanceAfter >= 0 ? 'text-slate-200' : 'text-rose-300'} font-semibold">${Utils.formatCurrency(ev.worstMonth.balanceAfter)}</span>`;
         } else {
           const financedText = ev.remainingAmount === 0
-            ? '100% coberto pela entrada'
+            ? (ev.downPaymentMonthImpact > 0 ? `À vista (mês): ${Utils.formatCurrency(ev.downPaymentMonthImpact)}` : '100% coberto pela entrada')
             : (plan.installments > 1 ? `${plan.installments}x de ${Utils.formatCurrency(ev.monthlyImpact)}` : Utils.formatCurrency(ev.monthlyImpact));
-          detailLine = `Alvo: <strong class="text-slate-200">${Utils.formatCurrency(plan.targetAmount)}</strong> • Impacto: <strong class="text-slate-200">${financedText}</strong> • Pior mês: <span class="${ev.worstMonth.balanceAfter >= 0 ? 'text-slate-200' : 'text-rose-300'} font-semibold">${Utils.formatCurrency(ev.worstMonth.balanceAfter)}</span>`;
+          const entryInfo = (plan.savedAmount > 0 && ev.remainingAmount > 0)
+            ? ` • Entrada: <strong class="text-slate-200">${Utils.formatCurrency(plan.savedAmount)}</strong> (${plan.downPaymentSource === 'month_budget' ? 'no mês' : 'guardada'})`
+            : '';
+          detailLine = `Alvo: <strong class="text-slate-200">${Utils.formatCurrency(plan.targetAmount)}</strong>${entryInfo} • Impacto: <strong class="text-slate-200">${financedText}</strong> • Pior mês: <span class="${ev.worstMonth.balanceAfter >= 0 ? 'text-slate-200' : 'text-rose-300'} font-semibold">${Utils.formatCurrency(ev.worstMonth.balanceAfter)}</span>`;
         }
 
         const actionsHtml = isCompleted
@@ -3183,7 +4408,7 @@
                     <span class="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-800 text-slate-300 border border-slate-700">${modeBadge}</span>
                   </div>
                   <div class="text-[11px] text-slate-400 mt-0.5">
-                    ${Utils.escapeHTML(plan.category)} • ${Utils.escapeHTML(plan.paymentMethod)}
+                    ${subtitleLine}
                   </div>
                 </div>
               </div>
@@ -3240,6 +4465,11 @@
         this.planMonthlyContributionInput?.focus();
         return;
       }
+      if (draft.mode === 'financing' && draft.financingCalcBy === 'installment' && remaining > 0 && draft.financingInstallmentAmount <= 0) {
+        Toast.show('Informe o valor da parcela proposta pelo banco ou loja.', 'warning');
+        this.planFinancingInstallmentInput?.focus();
+        return;
+      }
 
       if (!Array.isArray(this.state.plans)) this.state.plans = [];
 
@@ -3290,18 +4520,47 @@
       const plan = (this.state.plans || []).find(p => p.id === planId);
       if (!plan || plan.status === 'completed') return;
 
-      const remainingAmount = Math.max(0, Math.round((plan.targetAmount - plan.savedAmount) * 100) / 100);
-      const shouldLaunchExpenses = plan.mode === 'installment' && remainingAmount > 0;
+      const ev = this.evaluatePlan(plan);
+      const remainingAmount = ev.remainingAmount;
+      const downPaymentMonthImpact = (plan.mode !== 'save' && plan.downPaymentSource === 'month_budget' && ev.savedAmount > 0)
+        ? Math.min(ev.savedAmount, ev.targetAmount || ev.savedAmount)
+        : 0;
+
+      if (plan.mode === 'financing' && remainingAmount > 0 && ev.monthlyImpact <= 0) {
+        Toast.show('Informe a taxa ou o valor da parcela do financiamento antes de efetivar.', 'warning');
+        this.openPlanningModal(plan.id);
+        return;
+      }
+
+      const currentPeriod = this.state.currentPeriod;
+      const dueDay = Math.max(1, Math.min(31, parseInt(plan.financingDueDay, 10) || 10));
+      const dueDate = Utils.shiftDateToPeriod(`${currentPeriod}-${String(dueDay).padStart(2, '0')}`, currentPeriod) || `${currentPeriod}-10`;
 
       let confirmMsg = '';
-      if (shouldLaunchExpenses) {
+      if (plan.mode === 'financing') {
+        if (remainingAmount > 0) {
+          const billTitlePreview = `${plan.title} (Financ. 1/${ev.installments})`;
+          const entryNote = downPaymentMonthImpact > 0
+            ? ` Também será lançado o valor de ${Utils.formatCurrency(downPaymentMonthImpact)} referente à Entrada em Gastos Diários (Pix).`
+            : (ev.savedAmount > 0 ? ` (com ${Utils.formatCurrency(ev.savedAmount)} de entrada já separada).` : '.');
+          confirmMsg = `Deseja efetivar o financiamento "${plan.title}"? Será criada a Conta Fixa "${billTitlePreview}" no valor de ${Utils.formatCurrency(ev.monthlyImpact)} (vencimento ${Utils.formatDate(dueDate)}, categoria ${plan.category})${entryNote}`;
+        } else if (downPaymentMonthImpact > 0) {
+          confirmMsg = `Deseja efetivar "${plan.title}"? A entrada cobre 100% do valor e será lançada em Gastos Diários (${Utils.formatCurrency(downPaymentMonthImpact)} via Pix, categoria ${plan.category}).`;
+        } else {
+          confirmMsg = `Marcar "${plan.title}" como concluído? Como o valor já está 100% coberto pela entrada guardada, nenhuma conta fixa ou gasto adicional será lançado.`;
+        }
+      } else if (plan.mode === 'installment' && remainingAmount > 0) {
         const condText = plan.installments > 1
           ? `${plan.installments} parcelas em ${plan.paymentMethod}`
           : `1 lançamento à vista (${plan.paymentMethod})`;
-        const entryNote = plan.savedAmount > 0
-          ? ` (descontando ${Utils.formatCurrency(plan.savedAmount)} de entrada/reserva já guardada)`
+        const entryNote = ev.savedAmount > 0
+          ? (downPaymentMonthImpact > 0
+            ? ` + lançamento imediato da entrada de ${Utils.formatCurrency(downPaymentMonthImpact)} via Pix`
+            : ` (descontando ${Utils.formatCurrency(ev.savedAmount)} de entrada/reserva já guardada)`)
           : '';
-        confirmMsg = `Deseja efetivar "${plan.title}"? Será lançado o valor de ${Utils.formatCurrency(remainingAmount)}${entryNote} em Gastos Diários (${condText}, categoria ${plan.category}).`;
+        confirmMsg = `Deseja efetivar "${plan.title}"? Será lançado o valor de ${Utils.formatCurrency(remainingAmount)} em Gastos Diários (${condText}, categoria ${plan.category})${entryNote}.`;
+      } else if (plan.mode === 'installment' && downPaymentMonthImpact > 0) {
+        confirmMsg = `Deseja efetivar "${plan.title}"? Será lançado o pagamento à vista de ${Utils.formatCurrency(downPaymentMonthImpact)} em Gastos Diários (${plan.paymentMethod}, categoria ${plan.category}).`;
       } else if (plan.mode === 'save') {
         confirmMsg = `Marcar a meta "${plan.title}" como efetivada? Como é um plano de economia acumulada, nenhum gasto parcelado será lançado automaticamente no mês.`;
       } else {
@@ -3310,12 +4569,54 @@
 
       const confirmed = await ConfirmDialog.open({
         title: 'Efetivar Compra Planejada',
-        message: confirmMsg
+        message: confirmMsg,
+        confirmText: 'Efetivar',
+        variant: 'success',
+        icon: 'fa-check'
       });
       if (!confirmed) return;
 
-      if (shouldLaunchExpenses) {
-        const startDateISO = this.getEffectivePlanStartDate();
+      const startDateISO = this.getEffectivePlanStartDate();
+
+      if (plan.mode === 'financing') {
+        let feedbackParts = [];
+        if (remainingAmount > 0) {
+          if (!Array.isArray(this.state.bills)) this.state.bills = [];
+          this.state.bills.push({
+            id: Utils.generateUUID(),
+            title: `${plan.title} (Financ. 1/${ev.installments})`,
+            amount: ev.monthlyImpact,
+            dueDate,
+            category: plan.category,
+            paid: false,
+            financingPlanId: plan.id,
+            financingCurrentInstallment: 1,
+            financingTotalInstallments: ev.installments,
+            createdAt: new Date().toISOString()
+          });
+          feedbackParts.push(`Conta fixa de ${Utils.formatCurrency(ev.monthlyImpact)} cadastrada`);
+        }
+        if (downPaymentMonthImpact > 0) {
+          if (!Array.isArray(this.state.expenses)) this.state.expenses = [];
+          this.state.expenses.unshift({
+            id: Utils.generateUUID(),
+            description: remainingAmount > 0 ? `Entrada: ${plan.title}` : plan.title,
+            amount: downPaymentMonthImpact,
+            date: startDateISO,
+            category: plan.category,
+            method: 'Pix',
+            createdAt: new Date().toISOString()
+          });
+          feedbackParts.push(`entrada de ${Utils.formatCurrency(downPaymentMonthImpact)} lançada`);
+        }
+
+        Toast.show(
+          feedbackParts.length > 0
+            ? `Financiamento "${plan.title}" efetivado (${feedbackParts.join(' e ')})!`
+            : `Financiamento "${plan.title}" marcado como efetivado!`,
+          'success'
+        );
+      } else if (plan.mode === 'installment' && remainingAmount > 0) {
         const { installments: createdExpenses } = this.buildInstallmentExpenses({
           description: plan.title,
           amount: remainingAmount,
@@ -3326,12 +4627,34 @@
           method: plan.paymentMethod
         });
         this.state.expenses.unshift(...createdExpenses);
+        if (downPaymentMonthImpact > 0) {
+          this.state.expenses.unshift({
+            id: Utils.generateUUID(),
+            description: `Entrada: ${plan.title}`,
+            amount: downPaymentMonthImpact,
+            date: startDateISO,
+            category: plan.category,
+            method: 'Pix',
+            createdAt: new Date().toISOString()
+          });
+        }
         Toast.show(
           createdExpenses.length > 1
             ? `Compra "${plan.title}" efetivada em ${createdExpenses.length}x nos Gastos Diários!`
             : `Compra "${plan.title}" lançada em Gastos Diários!`,
           'success'
         );
+      } else if (plan.mode === 'installment' && downPaymentMonthImpact > 0) {
+        this.state.expenses.unshift({
+          id: Utils.generateUUID(),
+          description: plan.title,
+          amount: downPaymentMonthImpact,
+          date: startDateISO,
+          category: plan.category,
+          method: plan.paymentMethod,
+          createdAt: new Date().toISOString()
+        });
+        Toast.show(`Compra "${plan.title}" lançada em Gastos Diários!`, 'success');
       } else {
         Toast.show(`Planejamento "${plan.title}" marcado como efetivado!`, 'success');
       }
@@ -3380,6 +4703,742 @@
       Storage.save(this.state);
       this.render();
       Toast.show('Planejamento excluído.', 'info');
+    },
+
+    // ========================================================================
+    // CAIXINHAS E RESERVAS (DINHEIRO GUARDADO)
+    // ========================================================================
+    getTotalReservesBalance() {
+      const total = (this.state.reserves || []).reduce((sum, r) => sum + (r.balance || 0), 0);
+      return Math.round(total * 100) / 100;
+    },
+
+    getPeriodReserveFlow(period = this.state.currentPeriod) {
+      let depositedInMonth = 0;
+      let withdrawnToMonth = 0;
+      let monthMovementCount = 0;
+
+      (this.state.reserves || []).forEach(reserve => {
+        (reserve.movements || []).forEach(mov => {
+          if (!(mov.date || '').startsWith(period)) return;
+          if (!mov.affectMonthBalance) return;
+          monthMovementCount++;
+          if (mov.type === 'deposit') {
+            depositedInMonth += mov.amount || 0;
+          } else if (mov.type === 'withdraw') {
+            withdrawnToMonth += mov.amount || 0;
+          }
+        });
+      });
+
+      depositedInMonth = Math.round(depositedInMonth * 100) / 100;
+      withdrawnToMonth = Math.round(withdrawnToMonth * 100) / 100;
+      const netSavedInMonth = Math.round((depositedInMonth - withdrawnToMonth) * 100) / 100;
+
+      return {
+        depositedInMonth,
+        withdrawnToMonth,
+        netSavedInMonth,
+        monthMovementCount
+      };
+    },
+
+    getReserveEffectiveDefaultDate() {
+      const todayISO = Utils.getTodayISO();
+      const period = this.state.currentPeriod;
+      if (todayISO.startsWith(period)) return todayISO;
+      const dayNum = parseInt(todayISO.split('-')[2], 10) || 10;
+      const [year, month] = period.split('-').map(Number);
+      const daysInMonth = new Date(year, month, 0).getDate();
+      return `${period}-${String(Math.min(dayNum, daysInMonth)).padStart(2, '0')}`;
+    },
+
+    setReserveTab(tab) {
+      const normalizedTab = tab === 'manage' ? 'manage' : 'move';
+
+      this.reserveTabBtns.forEach(btn => {
+        const isActive = btn.getAttribute('data-reserve-tab') === normalizedTab;
+        if (isActive) {
+          btn.classList.add('bg-teal-600', 'text-white', 'shadow-sm');
+          btn.classList.remove('text-slate-400', 'hover:text-white');
+        } else {
+          btn.classList.remove('bg-teal-600', 'text-white', 'shadow-sm');
+          btn.classList.add('text-slate-400', 'hover:text-white');
+        }
+      });
+
+      if (normalizedTab === 'manage') {
+        this.reserveMovePanel?.classList.add('hidden');
+        this.reserveManagePanel?.classList.remove('hidden');
+      } else {
+        this.reserveMovePanel?.classList.remove('hidden');
+        this.reserveManagePanel?.classList.add('hidden');
+      }
+    },
+
+    setReserveOp(op) {
+      const normalizedOp = op === 'withdraw' ? 'withdraw' : 'deposit';
+      if (this.reserveOpTypeInput) this.reserveOpTypeInput.value = normalizedOp;
+
+      this.reserveOpBtns.forEach(btn => {
+        const btnOp = btn.getAttribute('data-reserve-op');
+        const isActive = btnOp === normalizedOp;
+        btn.classList.remove('bg-emerald-600', 'bg-amber-600', 'text-white', 'shadow-sm', 'text-slate-400', 'hover:text-white');
+        if (isActive) {
+          btn.classList.add(normalizedOp === 'deposit' ? 'bg-emerald-600' : 'bg-amber-600', 'text-white', 'shadow-sm');
+        } else {
+          btn.classList.add('text-slate-400', 'hover:text-white');
+        }
+      });
+
+      if (normalizedOp === 'deposit') {
+        if (this.reserveMoveAffectMonthCheckbox) this.reserveMoveAffectMonthCheckbox.checked = true;
+        if (this.reserveMoveAffectMonthLabel) this.reserveMoveAffectMonthLabel.textContent = 'Abater do Saldo Restante deste mês';
+        if (this.reserveMoveAffectMonthHint) {
+          this.reserveMoveAffectMonthHint.textContent = 'Reduz a folga livre do mês para evitar gastar o que já foi guardado (sem contar como gasto diário).';
+        }
+        if (this.reserveMoveSubmitBtn) {
+          this.reserveMoveSubmitBtn.className = 'w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white rounded-xl text-xs font-semibold transition-smooth shadow-md shadow-emerald-600/20 flex items-center justify-center gap-1.5';
+          this.reserveMoveSubmitBtn.innerHTML = '<i class="fa-solid fa-piggy-bank"></i><span>Confirmar Aporte</span>';
+        }
+      } else {
+        if (this.reserveMoveAffectMonthCheckbox) this.reserveMoveAffectMonthCheckbox.checked = false;
+        if (this.reserveMoveAffectMonthLabel) this.reserveMoveAffectMonthLabel.textContent = 'Somar no Saldo Restante deste mês';
+        if (this.reserveMoveAffectMonthHint) {
+          this.reserveMoveAffectMonthHint.textContent = 'Marque se estiver usando essa reserva para pagar contas ou despesas deste mês.';
+        }
+        if (this.reserveMoveSubmitBtn) {
+          this.reserveMoveSubmitBtn.className = 'w-full sm:w-auto px-4 py-2 bg-amber-600 hover:bg-amber-500 active:scale-95 text-white rounded-xl text-xs font-semibold transition-smooth shadow-md shadow-amber-600/20 flex items-center justify-center gap-1.5';
+          this.reserveMoveSubmitBtn.innerHTML = '<i class="fa-solid fa-hand-holding-dollar"></i><span>Confirmar Resgate</span>';
+        }
+      }
+    },
+
+    populateReserveMoveSelect(preferredId = null) {
+      if (!this.reserveMoveSelect) return;
+
+      const reserves = this.state.reserves || [];
+      if (reserves.length === 0) {
+        this.reserveMoveSelect.innerHTML = '<option value="">Crie uma caixinha na aba ao lado primeiro</option>';
+        this.reserveMoveSelect.disabled = true;
+        if (this.reserveMoveSubmitBtn) this.reserveMoveSubmitBtn.disabled = true;
+        if (this.reserveMoveSelectedBalance) this.reserveMoveSelectedBalance.textContent = 'Saldo: R$ 0,00';
+        return;
+      }
+
+      this.reserveMoveSelect.disabled = false;
+      if (this.reserveMoveSubmitBtn) this.reserveMoveSubmitBtn.disabled = false;
+
+      const currentVal = preferredId || this.reserveMoveSelect.value;
+      this.reserveMoveSelect.innerHTML = reserves
+        .map(r => `<option value="${r.id}">${Utils.escapeHTML(r.title)} (${Utils.formatCurrency(r.balance)})</option>`)
+        .join('');
+
+      if (currentVal && reserves.some(r => r.id === currentVal)) {
+        this.reserveMoveSelect.value = currentVal;
+      } else {
+        this.reserveMoveSelect.value = reserves[0].id;
+      }
+
+      this.updateSelectedReserveBalanceDisplay();
+    },
+
+    updateSelectedReserveBalanceDisplay() {
+      if (!this.reserveMoveSelectedBalance || !this.reserveMoveSelect) return;
+      const selectedId = this.reserveMoveSelect.value;
+      const reserve = (this.state.reserves || []).find(r => r.id === selectedId);
+      const bal = reserve ? (reserve.balance || 0) : 0;
+      this.reserveMoveSelectedBalance.textContent = `Saldo: ${Utils.formatCurrency(bal)}`;
+    },
+
+    resetReserveForm() {
+      this.reserveForm?.reset();
+      if (this.reserveEditId) this.reserveEditId.value = '';
+      if (this.reserveFormTitle) this.reserveFormTitle.textContent = 'Nova Caixinha / Reserva';
+      this.cancelReserveEditBtn?.classList.add('hidden');
+      if (this.reserveTypeSelect) this.reserveTypeSelect.value = 'Reserva de Emergência';
+      if (this.reserveBalanceInput) this.reserveBalanceInput.value = '0,00';
+      if (this.reserveGoalInput) this.reserveGoalInput.value = '0,00';
+      if (this.reserveBalanceHint) {
+        this.reserveBalanceHint.textContent = 'Saldo já existente não altera a renda nem o saldo livre deste mês.';
+      }
+      if (this.reserveSubmitBtn) {
+        this.reserveSubmitBtn.innerHTML = '<i class="fa-solid fa-plus"></i><span>Criar Caixinha</span>';
+      }
+    },
+
+    resetReserveMoveForm(reserveId = null, op = 'deposit') {
+      this.populateReserveMoveSelect(reserveId);
+      if (this.reserveMoveAmountInput) this.reserveMoveAmountInput.value = '0,00';
+      if (this.reserveMoveDateInput) this.reserveMoveDateInput.value = this.getReserveEffectiveDefaultDate();
+      if (this.reserveMoveNoteInput) this.reserveMoveNoteInput.value = '';
+      this.setReserveOp(op);
+    },
+
+    openReservesModal({ tab = null, op = 'deposit', reserveId = null, editId = null } = {}) {
+      const hasReserves = (this.state.reserves || []).length > 0;
+
+      if (this.reservesModalTotal) {
+        this.reservesModalTotal.textContent = Utils.formatCurrency(this.getTotalReservesBalance());
+      }
+
+      if (editId) {
+        this.resetReserveMoveForm(editId, 'deposit');
+        this.openEditReserve(editId);
+      } else {
+        this.resetReserveForm();
+        this.resetReserveMoveForm(reserveId, op);
+        const resolvedTab = tab || (hasReserves ? 'move' : 'manage');
+        this.setReserveTab(resolvedTab);
+      }
+
+      this.renderReservesModalList();
+      this.openModal(this.reservesModal);
+
+      if (editId || (!hasReserves && !tab) || tab === 'manage') {
+        this.reserveTitleInput?.focus();
+      } else {
+        this.reserveMoveAmountInput?.focus();
+      }
+    },
+
+    openEditReserve(reserveId) {
+      const reserve = (this.state.reserves || []).find(r => r.id === reserveId);
+      if (!reserve) return;
+
+      if (this.reserveEditId) this.reserveEditId.value = reserve.id;
+      if (this.reserveFormTitle) this.reserveFormTitle.textContent = 'Editar Caixinha';
+      this.cancelReserveEditBtn?.classList.remove('hidden');
+      if (this.reserveTitleInput) this.reserveTitleInput.value = reserve.title;
+      if (this.reserveTypeSelect) {
+        this.reserveTypeSelect.value = RESERVE_TYPE_META[reserve.type] ? reserve.type : 'Outros';
+      }
+      if (this.reserveBalanceInput) {
+        this.reserveBalanceInput.value = Utils.formatNumberToInput(reserve.balance || 0);
+      }
+      if (this.reserveGoalInput) {
+        this.reserveGoalInput.value = Utils.formatNumberToInput(reserve.goalAmount || 0);
+      }
+      if (this.reserveBalanceHint) {
+        this.reserveBalanceHint.textContent = 'Alterar o saldo aqui registra um ajuste direto sem afetar o saldo do mês.';
+      }
+      if (this.reserveSubmitBtn) {
+        this.reserveSubmitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i><span>Salvar Alterações</span>';
+      }
+
+      this.setReserveTab('manage');
+      if (this.reservesModalBody) this.reservesModalBody.scrollTop = 0;
+    },
+
+    handleReserveSubmit(e) {
+      e.preventDefault();
+      const editId = this.reserveEditId?.value || '';
+      const title = (this.reserveTitleInput?.value || '').trim();
+      const rawType = this.reserveTypeSelect?.value || 'Outros';
+      const type = RESERVE_TYPE_META[rawType] ? rawType : 'Outros';
+      const balance = Math.max(0, Math.round(Utils.parseCurrency(this.reserveBalanceInput?.value || '0') * 100) / 100);
+      const goalAmount = Math.max(0, Math.round(Utils.parseCurrency(this.reserveGoalInput?.value || '0') * 100) / 100);
+
+      if (!title) {
+        Toast.show('Informe o nome da caixinha ou reserva.', 'warning');
+        this.reserveTitleInput?.focus();
+        return;
+      }
+
+      if (!Array.isArray(this.state.reserves)) this.state.reserves = [];
+
+      let activeReserveId = editId;
+      if (editId) {
+        const idx = this.state.reserves.findIndex(r => r.id === editId);
+        if (idx !== -1) {
+          const existing = this.state.reserves[idx];
+          const movements = [...(existing.movements || [])];
+          const delta = Math.round((balance - (existing.balance || 0)) * 100) / 100;
+
+          if (Math.abs(delta) >= 0.01) {
+            movements.unshift(Storage.normalizeReserveMovement({
+              id: Utils.generateUUID(),
+              type: delta > 0 ? 'deposit' : 'withdraw',
+              amount: Math.abs(delta),
+              date: Utils.getTodayISO(),
+              note: 'Ajuste manual de saldo',
+              affectMonthBalance: false,
+              createdAt: new Date().toISOString()
+            }));
+          }
+
+          this.state.reserves[idx] = Storage.normalizeReserve({
+            ...existing,
+            title,
+            type,
+            balance,
+            goalAmount,
+            movements,
+            updatedAt: new Date().toISOString()
+          });
+          Toast.show(`Caixinha "${title}" atualizada!`, 'success');
+        }
+      } else {
+        const movements = [];
+        if (balance > 0) {
+          movements.push(Storage.normalizeReserveMovement({
+            id: Utils.generateUUID(),
+            type: 'initial',
+            amount: balance,
+            date: Utils.getTodayISO(),
+            note: 'Saldo inicial já guardado',
+            affectMonthBalance: false,
+            createdAt: new Date().toISOString()
+          }));
+        }
+
+        const created = Storage.normalizeReserve({
+          id: Utils.generateUUID(),
+          title,
+          type,
+          balance,
+          goalAmount,
+          movements,
+          createdAt: new Date().toISOString()
+        });
+
+        this.state.reserves.unshift(created);
+        activeReserveId = created.id;
+        Toast.show(
+          balance > 0
+            ? `Caixinha "${created.title}" criada com ${Utils.formatCurrency(balance)}!`
+            : `Caixinha "${created.title}" criada!`,
+          'success'
+        );
+      }
+
+      Storage.save(this.state);
+      this.resetReserveForm();
+      this.resetReserveMoveForm(activeReserveId, 'deposit');
+      this.render();
+    },
+
+    handleReserveMoveSubmit(e) {
+      e.preventDefault();
+      const reserveId = this.reserveMoveSelect?.value || '';
+      const reserve = (this.state.reserves || []).find(r => r.id === reserveId);
+
+      if (!reserve) {
+        Toast.show('Crie uma caixinha antes de registrar movimentações.', 'warning');
+        this.setReserveTab('manage');
+        return;
+      }
+
+      const op = this.reserveOpTypeInput?.value === 'withdraw' ? 'withdraw' : 'deposit';
+      const amount = Math.round(Utils.parseCurrency(this.reserveMoveAmountInput?.value || '0') * 100) / 100;
+      const date = this.reserveMoveDateInput?.value || '';
+      const note = (this.reserveMoveNoteInput?.value || '').trim();
+      const affectMonthBalance = Boolean(this.reserveMoveAffectMonthCheckbox?.checked);
+
+      if (amount <= 0) {
+        Toast.show('O valor da movimentação deve ser maior que zero.', 'warning');
+        this.reserveMoveAmountInput?.focus();
+        return;
+      }
+      if (!date) {
+        Toast.show('Selecione a data da movimentação.', 'warning');
+        return;
+      }
+      if (op === 'withdraw' && amount > (reserve.balance || 0)) {
+        Toast.show(`Saldo insuficiente em "${reserve.title}" (disponível: ${Utils.formatCurrency(reserve.balance)}).`, 'warning');
+        return;
+      }
+
+      const nextBalance = op === 'deposit'
+        ? Math.round(((reserve.balance || 0) + amount) * 100) / 100
+        : Math.round(((reserve.balance || 0) - amount) * 100) / 100;
+
+      const movement = Storage.normalizeReserveMovement({
+        id: Utils.generateUUID(),
+        type: op,
+        amount,
+        date,
+        note,
+        affectMonthBalance,
+        createdAt: new Date().toISOString()
+      });
+
+      reserve.balance = Math.max(0, nextBalance);
+      if (!Array.isArray(reserve.movements)) reserve.movements = [];
+      reserve.movements.unshift(movement);
+      reserve.updatedAt = new Date().toISOString();
+
+      Storage.save(this.state);
+      if (this.reserveMoveAmountInput) this.reserveMoveAmountInput.value = '0,00';
+      if (this.reserveMoveNoteInput) this.reserveMoveNoteInput.value = '';
+      this.render();
+
+      Toast.show(
+        op === 'deposit'
+          ? `+${Utils.formatCurrency(amount)} guardado em "${reserve.title}"!`
+          : `Resgate de ${Utils.formatCurrency(amount)} realizado em "${reserve.title}"!`,
+        'success'
+      );
+    },
+
+    async deleteReserveMovement(reserveId, movementId) {
+      const reserve = (this.state.reserves || []).find(r => r.id === reserveId);
+      if (!reserve) return;
+      const mov = (reserve.movements || []).find(m => m.id === movementId);
+      if (!mov) return;
+
+      if ((mov.type === 'deposit' || mov.type === 'initial') && (reserve.balance || 0) < mov.amount) {
+        Toast.show('Não é possível excluir este registro porque parte desse saldo já foi resgatada.', 'warning');
+        return;
+      }
+
+      const confirmed = await ConfirmDialog.open({
+        title: 'Excluir Movimentação',
+        message: `Deseja remover este registro de ${Utils.formatCurrency(mov.amount)} e recalcular o saldo de "${reserve.title}"?`,
+        confirmText: 'Excluir',
+        variant: 'danger'
+      });
+      if (!confirmed) return;
+
+      const nextBalance = mov.type === 'withdraw'
+        ? Math.round(((reserve.balance || 0) + mov.amount) * 100) / 100
+        : Math.max(0, Math.round(((reserve.balance || 0) - mov.amount) * 100) / 100);
+
+      reserve.balance = nextBalance;
+      reserve.movements = (reserve.movements || []).filter(m => m.id !== movementId);
+      reserve.updatedAt = new Date().toISOString();
+
+      Storage.save(this.state);
+      this.render();
+      Toast.show('Movimentação removida e saldo atualizado.', 'info');
+    },
+
+    async deleteReserve(reserveId) {
+      const reserve = (this.state.reserves || []).find(r => r.id === reserveId);
+      if (!reserve) return;
+
+      const confirmed = await ConfirmDialog.open({
+        title: 'Excluir Caixinha',
+        message: `Deseja excluir "${reserve.title}" (saldo atual de ${Utils.formatCurrency(reserve.balance)}) e todo o histórico dela?`,
+        confirmText: 'Excluir',
+        variant: 'danger'
+      });
+      if (!confirmed) return;
+
+      this.state.reserves = (this.state.reserves || []).filter(r => r.id !== reserveId);
+      this.expandedReserveHistoryIds.delete(reserveId);
+
+      if (this.reserveEditId?.value === reserveId) {
+        this.resetReserveForm();
+      }
+
+      Storage.save(this.state);
+      this.render();
+      Toast.show('Caixinha excluída.', 'info');
+    },
+
+    renderReserves() {
+      const reserves = this.state.reserves || [];
+      const totalReserves = this.getTotalReservesBalance();
+      const reserveFlow = this.getPeriodReserveFlow(this.state.currentPeriod);
+
+      // 1. Atualiza Faixa do Topo
+      if (this.topTotalReserves) {
+        this.topTotalReserves.textContent = Utils.formatCurrency(totalReserves);
+      }
+      if (this.topReservesMetaText) {
+        if (reserves.length === 0) {
+          this.topReservesMetaText.textContent = 'Crie caixinhas para dinheiro já guardado ou novas reservas';
+        } else {
+          this.topReservesMetaText.textContent = `${reserves.length} ${reserves.length === 1 ? 'caixinha ativa' : 'caixinhas ativas'} • Saldo contínuo`;
+        }
+      }
+      if (this.topMonthReservedBadge) {
+        if (reserveFlow.netSavedInMonth > 0) {
+          this.topMonthReservedBadge.textContent = `Guardado no mês: +${Utils.formatCurrency(reserveFlow.netSavedInMonth)}`;
+          this.topMonthReservedBadge.className = 'px-2.5 py-1 rounded-lg bg-teal-500/10 border border-teal-500/30 text-[11px] font-semibold text-teal-300';
+        } else if (reserveFlow.netSavedInMonth < 0) {
+          this.topMonthReservedBadge.textContent = `Usado no mês: ${Utils.formatCurrency(Math.abs(reserveFlow.netSavedInMonth))}`;
+          this.topMonthReservedBadge.className = 'px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[11px] font-semibold text-amber-300';
+        } else {
+          this.topMonthReservedBadge.textContent = 'Sem impacto no mês atual';
+          this.topMonthReservedBadge.className = 'px-2.5 py-1 rounded-lg bg-slate-900/80 border border-slate-700/70 text-[11px] font-medium text-slate-400';
+        }
+      }
+
+      // 2. Atualiza Card da Coluna Direita
+      if (this.sidebarTotalReserves) {
+        this.sidebarTotalReserves.textContent = Utils.formatCurrency(totalReserves);
+      }
+
+      if (this.reservesBreakdownList) {
+        if (reserves.length === 0) {
+          this.reservesBreakdownList.innerHTML = `
+            <div class="text-center py-4 text-slate-500 text-xs">
+              <i class="fa-solid fa-piggy-bank text-2xl mb-1.5 opacity-40"></i>
+              <p>Nenhum dinheiro guardado cadastrado.</p>
+              <button id="quickOpenReservesBtn" type="button" class="mt-2.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-teal-400 border border-teal-400/30 rounded-lg text-xs font-semibold transition-colors">
+                Adicionar Dinheiro Guardado
+              </button>
+            </div>
+          `;
+          document.getElementById('quickOpenReservesBtn')?.addEventListener('click', () => this.openReservesModal({ tab: 'manage' }));
+        } else {
+          const visibleReserves = reserves.slice(0, 3);
+          let html = '';
+
+          visibleReserves.forEach(res => {
+            const meta = RESERVE_TYPE_META[res.type] || RESERVE_TYPE_META['Outros'];
+            const hasGoal = (res.goalAmount || 0) > 0;
+            const percent = hasGoal ? Math.min(100, Math.round(((res.balance || 0) / res.goalAmount) * 100)) : 0;
+
+            const goalHtml = hasGoal ? `
+              <div class="space-y-1">
+                <div class="flex items-center justify-between text-[10px] text-slate-400">
+                  <span>Meta: ${Utils.formatCurrency(res.goalAmount)}</span>
+                  <span class="font-semibold text-teal-300">${percent}%</span>
+                </div>
+                <div class="w-full h-1.5 bg-slate-700/60 rounded-full overflow-hidden">
+                  <div class="h-full rounded-full transition-all duration-500" style="width: ${percent}%; background-color: ${meta.color};"></div>
+                </div>
+              </div>
+            ` : '';
+
+            html += `
+              <div class="p-3 bg-slate-900/60 rounded-xl border border-slate-700/50 space-y-2">
+                <div class="flex items-center justify-between gap-2 text-xs">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <div class="w-6 h-6 rounded-lg flex-shrink-0 flex items-center justify-center text-[10px]" style="background-color: ${meta.color}20; color: ${meta.color};">
+                      <i class="fa-solid ${meta.icon}"></i>
+                    </div>
+                    <div class="min-w-0">
+                      <span class="font-semibold text-slate-200 truncate block">${Utils.escapeHTML(res.title)}</span>
+                      <span class="text-[10px] text-slate-500 block">${Utils.escapeHTML(res.type)}</span>
+                    </div>
+                  </div>
+                  <span class="font-bold text-teal-300 text-xs flex-shrink-0">${Utils.formatCurrency(res.balance)}</span>
+                </div>
+                ${goalHtml}
+                <div class="pt-1 flex items-center justify-end gap-1.5 border-t border-slate-800/80">
+                  <button type="button" data-sidebar-res-op="deposit" data-sidebar-res-id="${res.id}" class="px-2 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[10px] font-semibold transition-colors">
+                    + Guardar
+                  </button>
+                  <button type="button" data-sidebar-res-op="withdraw" data-sidebar-res-id="${res.id}" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[10px] font-semibold transition-colors">
+                    - Resgatar
+                  </button>
+                </div>
+              </div>
+            `;
+          });
+
+          if (reserves.length > 3) {
+            html += `
+              <button type="button" id="viewAllReservesBtn" class="w-full py-1.5 text-[11px] font-medium text-teal-300 hover:text-teal-200 bg-teal-500/10 hover:bg-teal-500/15 border border-teal-500/20 rounded-lg transition-colors">
+                Ver todas as ${reserves.length} caixinhas
+              </button>
+            `;
+          }
+
+          this.reservesBreakdownList.innerHTML = html;
+
+          this.reservesBreakdownList.querySelectorAll('[data-sidebar-res-id]').forEach(btn => {
+            btn.addEventListener('click', () => {
+              this.openReservesModal({
+                tab: 'move',
+                op: btn.getAttribute('data-sidebar-res-op') || 'deposit',
+                reserveId: btn.getAttribute('data-sidebar-res-id')
+              });
+            });
+          });
+
+          document.getElementById('viewAllReservesBtn')?.addEventListener('click', () => this.openReservesModal());
+        }
+      }
+
+      // 3. Mantém Planejamento de Compras e Modal de Reservas sincronizados
+      this.populatePlanReserveSelector();
+
+      if (this.reservesModal && !this.reservesModal.classList.contains('hidden')) {
+        if (this.reservesModalTotal) {
+          this.reservesModalTotal.textContent = Utils.formatCurrency(totalReserves);
+        }
+        this.populateReserveMoveSelect();
+        this.renderReservesModalList();
+      }
+    },
+
+    renderReservesModalList() {
+      if (!this.reservesListContainer) return;
+
+      const reserves = this.state.reserves || [];
+      if (this.reservesCountBadge) {
+        this.reservesCountBadge.textContent = `${reserves.length} ${reserves.length === 1 ? 'caixinha' : 'caixinhas'}`;
+      }
+
+      if (reserves.length === 0) {
+        this.reservesListContainer.innerHTML = `
+          <div class="text-center py-6 px-4 rounded-xl bg-slate-900/40 border border-slate-800 text-slate-400 space-y-1.5">
+            <i class="fa-solid fa-piggy-bank text-2xl text-slate-600"></i>
+            <p class="text-xs font-semibold text-slate-300">Nenhuma caixinha cadastrada ainda</p>
+            <p class="text-[11px] text-slate-500">Crie uma caixinha na aba "Nova Caixinha / Editar" e informe quanto já tem guardado ou comece do zero.</p>
+          </div>
+        `;
+        return;
+      }
+
+      const OP_META = {
+        initial: { label: 'Saldo inicial', badgeClass: 'bg-slate-800 text-slate-300 border-slate-700', sign: '' },
+        deposit: { label: 'Aporte', badgeClass: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30', sign: '+' },
+        withdraw: { label: 'Resgate', badgeClass: 'bg-amber-500/15 text-amber-300 border-amber-500/30', sign: '-' }
+      };
+
+      let html = '';
+      reserves.forEach(res => {
+        const meta = RESERVE_TYPE_META[res.type] || RESERVE_TYPE_META['Outros'];
+        const hasGoal = (res.goalAmount || 0) > 0;
+        const percent = hasGoal ? Math.min(100, Math.round(((res.balance || 0) / res.goalAmount) * 100)) : 0;
+        const movements = res.movements || [];
+        const isExpanded = this.expandedReserveHistoryIds.has(res.id);
+
+        const goalBarHtml = hasGoal ? `
+          <div class="space-y-1">
+            <div class="flex items-center justify-between text-[11px] text-slate-400">
+              <span>Meta: <strong class="text-slate-200">${Utils.formatCurrency(res.goalAmount)}</strong></span>
+              <span class="font-semibold text-teal-300">${percent}% concluído</span>
+            </div>
+            <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+              <div class="h-full rounded-full" style="width: ${percent}%; background-color: ${meta.color};"></div>
+            </div>
+          </div>
+        ` : '';
+
+        let historyHtml = '';
+        if (isExpanded) {
+          if (movements.length === 0) {
+            historyHtml = `
+              <div class="mt-2 p-2.5 rounded-lg bg-slate-950/60 border border-slate-800 text-[11px] text-slate-500 text-center">
+                Nenhuma movimentação registrada nesta caixinha ainda.
+              </div>
+            `;
+          } else {
+            historyHtml = `
+              <div class="mt-2 space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                ${movements.map(mov => {
+                  const om = OP_META[mov.type] || OP_META.deposit;
+                  const amountColor = mov.type === 'withdraw' ? 'text-amber-300' : 'text-emerald-300';
+                  const monthTag = mov.affectMonthBalance
+                    ? '<span class="px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 text-[9px]">Impacta mês</span>'
+                    : '<span class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 text-[9px]">Só reserva</span>';
+                  return `
+                    <div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-slate-950/70 border border-slate-800/80 text-[11px]">
+                      <div class="min-w-0">
+                        <div class="flex items-center gap-1.5 flex-wrap">
+                          <span class="px-1.5 py-0.5 rounded border text-[9px] font-semibold ${om.badgeClass}">${om.label}</span>
+                          <span class="text-slate-400">${Utils.formatDate(mov.date)}</span>
+                          ${monthTag}
+                        </div>
+                        ${mov.note ? `<p class="text-slate-300 truncate mt-0.5">${Utils.escapeHTML(mov.note)}</p>` : ''}
+                      </div>
+                      <div class="flex items-center gap-2 flex-shrink-0">
+                        <span class="font-bold ${amountColor}">${om.sign}${Utils.formatCurrency(mov.amount)}</span>
+                        <button type="button" data-res-mov-del="${mov.id}" data-res-id="${res.id}" class="text-slate-500 hover:text-rose-400 p-1" title="Excluir movimentação">
+                          <i class="fa-solid fa-xmark text-xs"></i>
+                        </button>
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            `;
+          }
+        }
+
+        html += `
+          <div class="p-3.5 rounded-xl bg-slate-900/60 border border-slate-700/60 space-y-2.5">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex items-center gap-2.5 min-w-0">
+                <div class="w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center text-xs" style="background-color: ${meta.color}20; color: ${meta.color};">
+                  <i class="fa-solid ${meta.icon}"></i>
+                </div>
+                <div class="min-w-0">
+                  <span class="font-bold text-slate-100 text-xs block truncate">${Utils.escapeHTML(res.title)}</span>
+                  <span class="text-[11px] text-slate-400">${Utils.escapeHTML(res.type)}</span>
+                </div>
+              </div>
+              <div class="text-right">
+                <span class="block text-[10px] text-slate-400">Saldo guardado</span>
+                <span class="text-sm font-bold text-teal-300">${Utils.formatCurrency(res.balance)}</span>
+              </div>
+            </div>
+
+            ${goalBarHtml}
+
+            <div class="pt-1.5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800/80">
+              <div class="flex items-center gap-1.5">
+                <button type="button" data-res-quick-op="deposit" data-res-id="${res.id}" class="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[11px] font-semibold transition-colors">
+                  + Guardar
+                </button>
+                <button type="button" data-res-quick-op="withdraw" data-res-id="${res.id}" class="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-[11px] font-semibold transition-colors">
+                  - Resgatar
+                </button>
+                <button type="button" data-res-toggle-hist="${res.id}" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] font-medium transition-colors">
+                  ${isExpanded ? 'Ocultar' : `Histórico (${movements.length})`}
+                </button>
+              </div>
+              <div class="flex items-center gap-1">
+                <button type="button" data-res-edit="${res.id}" class="action-icon-btn text-slate-400 hover:text-teal-400 hover:bg-teal-500/10" title="Editar caixinha">
+                  <i class="fa-solid fa-pen-to-square text-xs"></i>
+                </button>
+                <button type="button" data-res-delete="${res.id}" class="action-icon-btn text-slate-400 hover:text-rose-400 hover:bg-rose-500/10" title="Excluir caixinha">
+                  <i class="fa-solid fa-trash text-xs"></i>
+                </button>
+              </div>
+            </div>
+
+            ${historyHtml}
+          </div>
+        `;
+      });
+
+      this.reservesListContainer.innerHTML = html;
+
+      this.reservesListContainer.querySelectorAll('[data-res-quick-op]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-res-id');
+          const op = btn.getAttribute('data-res-quick-op') || 'deposit';
+          this.setReserveTab('move');
+          this.populateReserveMoveSelect(id);
+          this.setReserveOp(op);
+          if (this.reservesModalBody) this.reservesModalBody.scrollTop = 0;
+          this.reserveMoveAmountInput?.focus();
+        });
+      });
+
+      this.reservesListContainer.querySelectorAll('[data-res-toggle-hist]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-res-toggle-hist');
+          if (this.expandedReserveHistoryIds.has(id)) {
+            this.expandedReserveHistoryIds.delete(id);
+          } else {
+            this.expandedReserveHistoryIds.add(id);
+          }
+          this.renderReservesModalList();
+        });
+      });
+
+      this.reservesListContainer.querySelectorAll('[data-res-edit]').forEach(btn => {
+        btn.addEventListener('click', () => this.openEditReserve(btn.getAttribute('data-res-edit')));
+      });
+
+      this.reservesListContainer.querySelectorAll('[data-res-delete]').forEach(btn => {
+        btn.addEventListener('click', () => this.deleteReserve(btn.getAttribute('data-res-delete')));
+      });
+
+      this.reservesListContainer.querySelectorAll('[data-res-mov-del]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          this.deleteReserveMovement(btn.getAttribute('data-res-id'), btn.getAttribute('data-res-mov-del'));
+        });
+      });
     },
 
     // ========================================================================

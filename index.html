@@ -90,9 +90,15 @@
         <!-- Ações Rápidas (Desktop & Header) -->
         <div class="flex items-center gap-2">
           <!-- Configurar Renda -->
-          <button id="openIncomeModalBtn" class="hidden sm:flex items-center gap-2 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-semibold text-slate-200 transition-smooth hover:border-slate-600 shadow-sm" title="Gerenciar Fontes de Renda">
+          <button id="openIncomeModalBtn" class="hidden sm:flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-semibold text-slate-200 transition-smooth hover:border-slate-600 shadow-sm" title="Gerenciar Fontes de Renda">
             <i class="fa-solid fa-hand-holding-dollar text-emerald-400"></i>
             <span>Renda</span>
+          </button>
+
+          <!-- Reservas / Dinheiro Guardado -->
+          <button id="openReservesHeaderBtn" class="hidden sm:flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-semibold text-slate-200 transition-smooth hover:border-slate-600 shadow-sm" title="Caixinhas e Dinheiro Guardado">
+            <i class="fa-solid fa-piggy-bank text-teal-400"></i>
+            <span class="hidden md:inline">Reservas</span>
           </button>
 
           <!-- Configurar Tetos (Budgeting) -->
@@ -247,6 +253,32 @@
           </div>
         </div>
 
+      </div>
+
+      <!-- 1.05 FAIXA DE PATRIMÔNIO GUARDADO (CAIXINHAS / RESERVAS) -->
+      <div id="reservesSummaryStrip" class="bg-slate-800/80 border border-slate-700/70 rounded-2xl px-4 sm:px-5 py-3.5 shadow-sm mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="w-9 h-9 rounded-xl bg-teal-500/10 border border-teal-500/20 text-teal-400 flex items-center justify-center text-sm flex-shrink-0">
+            <i class="fa-solid fa-piggy-bank"></i>
+          </div>
+          <div class="min-w-0">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Dinheiro Guardado</span>
+              <span id="topTotalReserves" class="text-base sm:text-lg font-bold text-teal-300 tracking-tight">R$ 0,00</span>
+            </div>
+            <p id="topReservesMetaText" class="text-[11px] text-slate-400 truncate">Nenhuma caixinha cadastrada</p>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between sm:justify-end gap-2.5 flex-wrap">
+          <span id="topMonthReservedBadge" class="px-2.5 py-1 rounded-lg bg-slate-900/80 border border-slate-700/70 text-[11px] font-medium text-slate-300">
+            Guardado no mês: R$ 0,00
+          </span>
+          <button id="openReservesStripBtn" type="button" class="tap-target px-3 py-1.5 bg-teal-500/15 hover:bg-teal-500/25 text-teal-300 border border-teal-500/30 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-smooth">
+            <i class="fa-solid fa-vault text-xs"></i>
+            <span>Caixinhas / Guardar</span>
+          </button>
+        </div>
       </div>
 
       <!-- 1.1 WIDGET DE RITMO DE QUEIMA (BURN-RATE DIÁRIO) -->
@@ -469,6 +501,32 @@
           </div>
 
           <div id="budgetBreakdownList" class="mt-4 space-y-3 text-xs">
+            <!-- Inserido dinamicamente via app.js -->
+          </div>
+        </section>
+
+        <!-- ==================== SEÇÃO 4.5: CAIXINHAS E RESERVAS ==================== -->
+        <section class="bg-slate-800/90 border border-slate-700/70 rounded-2xl p-5 sm:p-6 shadow-sm">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-700/60">
+            <div>
+              <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                <i class="fa-solid fa-piggy-bank text-teal-400"></i>
+                Dinheiro Guardado
+              </h3>
+              <p class="text-[11px] text-slate-400 mt-0.5">Caixinhas e reservas contínuas</p>
+            </div>
+            <button id="openReservesModalBtn" type="button" class="tap-target px-2.5 py-1.5 bg-slate-700/70 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-smooth border border-slate-600/80" title="Gerenciar Caixinhas e Reservas">
+              <i class="fa-solid fa-plus text-teal-400 text-xs"></i>
+              <span>Gerenciar</span>
+            </button>
+          </div>
+
+          <div class="mt-3 p-3 rounded-xl bg-slate-900/70 border border-slate-700/50 flex items-center justify-between">
+            <span class="text-[11px] font-medium text-slate-400">Total acumulado</span>
+            <span id="sidebarTotalReserves" class="text-sm font-bold text-teal-300">R$ 0,00</span>
+          </div>
+
+          <div id="reservesBreakdownList" class="mt-3 space-y-2.5 text-xs">
             <!-- Inserido dinamicamente via app.js -->
           </div>
         </section>
@@ -882,13 +940,13 @@
     </div>
   </div>
 
-  <!-- 4. MODAL: CONFIRMAÇÃO DE EXCLUSÃO (UX MODERNA, SEM ALERTS NATIVOS) -->
+  <!-- 4. MODAL: CONFIRMAÇÃO ASSÍNCRONA (UX MODERNA, SEM ALERTS NATIVOS) -->
   <div id="confirmModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center p-4">
     <div class="modal-backdrop fixed inset-0 bg-slate-950/80 backdrop-blur-sm modal-backdrop-animate"></div>
     <div class="modal-content relative bg-slate-800 border border-slate-700 w-full max-w-sm rounded-2xl shadow-2xl p-6 modal-content-animate z-10 text-center">
       
-      <div class="w-12 h-12 rounded-full bg-rose-500/10 text-rose-400 mx-auto flex items-center justify-center text-lg mb-3">
-        <i class="fa-solid fa-trash-can"></i>
+      <div id="confirmModalIconWrap" class="w-12 h-12 rounded-full bg-rose-500/10 text-rose-400 mx-auto flex items-center justify-center text-lg mb-3">
+        <i id="confirmModalIcon" class="fa-solid fa-trash-can"></i>
       </div>
 
       <h3 id="confirmModalTitle" class="font-bold text-white text-base">Confirmar Exclusão</h3>
@@ -1065,12 +1123,16 @@
           </div>
 
           <!-- Seletor de Modo -->
-          <div class="grid grid-cols-2 gap-2 p-1 bg-slate-950/80 border border-slate-800 rounded-xl">
-            <button type="button" data-plan-mode="installment" class="plan-mode-btn px-3 py-2 rounded-lg text-xs font-semibold transition-smooth bg-indigo-600 text-white shadow-sm flex items-center justify-center gap-1.5">
+          <div class="grid grid-cols-3 gap-1.5 sm:gap-2 p-1 bg-slate-950/80 border border-slate-800 rounded-xl">
+            <button type="button" data-plan-mode="installment" class="plan-mode-btn px-2 sm:px-3 py-2 rounded-lg text-[11px] sm:text-xs font-semibold transition-smooth bg-indigo-600 text-white shadow-sm flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 text-center leading-tight">
               <i class="fa-solid fa-credit-card"></i>
               <span>Parcelado / À vista</span>
             </button>
-            <button type="button" data-plan-mode="save" class="plan-mode-btn px-3 py-2 rounded-lg text-xs font-semibold transition-smooth text-slate-400 hover:text-white flex items-center justify-center gap-1.5">
+            <button type="button" data-plan-mode="financing" class="plan-mode-btn px-2 sm:px-3 py-2 rounded-lg text-[11px] sm:text-xs font-semibold transition-smooth text-slate-400 hover:text-white flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 text-center leading-tight">
+              <i class="fa-solid fa-landmark"></i>
+              <span>Financiamento</span>
+            </button>
+            <button type="button" data-plan-mode="save" class="plan-mode-btn px-2 sm:px-3 py-2 rounded-lg text-[11px] sm:text-xs font-semibold transition-smooth text-slate-400 hover:text-white flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 text-center leading-tight">
               <i class="fa-solid fa-piggy-bank"></i>
               <span>Juntar por mês</span>
             </button>
@@ -1101,7 +1163,7 @@
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label for="planTargetAmountInput" class="block text-xs font-medium text-slate-300 mb-1">Valor total estimado (R$)</label>
+              <label for="planTargetAmountInput" class="block text-xs font-medium text-slate-300 mb-1">Valor total do bem / compra (R$)</label>
               <div class="relative">
                 <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-semibold text-xs">R$</span>
                 <input type="text" id="planTargetAmountInput" inputmode="numeric" placeholder="0,00" class="money-input w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-bold text-sm focus:border-indigo-500 transition-colors" required />
@@ -1110,13 +1172,57 @@
 
             <div>
               <label for="planSavedAmountInput" class="block text-xs font-medium text-slate-300 mb-1">
-                Entrada / Já guardado <span class="text-slate-500 font-normal">(opcional)</span>
+                <span id="planSavedAmountLabel">Valor de entrada / Já guardado</span> <span class="text-slate-500 font-normal">(opcional)</span>
               </label>
               <div class="relative">
                 <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-semibold text-xs">R$</span>
                 <input type="text" id="planSavedAmountInput" inputmode="numeric" placeholder="0,00" class="money-input w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-semibold text-sm focus:border-indigo-500 transition-colors" />
               </div>
             </div>
+          </div>
+
+          <!-- Controle de Valor de Entrada e Origem (Parcelado / Financiamento) -->
+          <div id="planDownPaymentSourceBox" class="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <span class="text-[11px] font-medium text-slate-300 flex items-center gap-1.5">
+                <i class="fa-solid fa-wallet text-indigo-400"></i>
+                <span>Origem do valor de entrada</span>
+              </span>
+              <div class="flex items-center gap-1 flex-wrap">
+                <span class="text-[10px] text-slate-500 mr-0.5">Entrada rápida:</span>
+                <button type="button" data-plan-entry-pct="10" class="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-medium text-slate-200 transition-colors">10%</button>
+                <button type="button" data-plan-entry-pct="20" class="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-medium text-slate-200 transition-colors">20%</button>
+                <button type="button" data-plan-entry-pct="30" class="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-medium text-slate-200 transition-colors">30%</button>
+                <button type="button" data-plan-entry-pct="50" class="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-medium text-slate-200 transition-colors">50%</button>
+              </div>
+            </div>
+            <input type="hidden" id="planDownPaymentSourceInput" value="saved" />
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+              <button type="button" data-plan-entry-source="saved" class="plan-entry-source-btn px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-smooth bg-indigo-600/20 text-indigo-200 border border-indigo-500/40 flex items-center justify-center gap-1.5">
+                <i class="fa-solid fa-piggy-bank text-[10px]"></i>
+                <span>Já guardada / Caixinha</span>
+              </button>
+              <button type="button" data-plan-entry-source="month_budget" class="plan-entry-source-btn px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-smooth bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-700 flex items-center justify-center gap-1.5">
+                <i class="fa-solid fa-calendar-day text-[10px]"></i>
+                <span>Sai do orçamento deste mês</span>
+              </button>
+            </div>
+            <p id="planDownPaymentSourceHint" class="text-[10px] text-slate-400">
+              Considera a entrada já separada fora do fluxo deste mês (apenas reduz o saldo parcelado/financiado).
+            </p>
+          </div>
+
+          <!-- Integração com Caixinhas / Reservas -->
+          <div id="planReserveAssistBox" class="hidden p-2.5 rounded-xl bg-teal-500/10 border border-teal-500/25 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+            <div class="flex items-center gap-2 min-w-0">
+              <i class="fa-solid fa-piggy-bank text-teal-400 flex-shrink-0"></i>
+              <select id="planReserveSourceSelect" class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-slate-200 max-w-[230px] focus:border-teal-500">
+                <!-- Preenchido via app.js -->
+              </select>
+            </div>
+            <button type="button" id="planApplyReserveBtn" class="px-2.5 py-1 rounded-lg bg-teal-600/25 hover:bg-teal-600/40 text-teal-200 border border-teal-500/30 text-[11px] font-semibold transition-colors flex-shrink-0">
+              Usar na entrada
+            </button>
           </div>
 
           <!-- Campos do Modo A: Comprar Agora (À vista ou Parcelado) -->
@@ -1148,6 +1254,81 @@
                 <option value="Cartão de Débito">Cartão de Débito</option>
                 <option value="Dinheiro">Dinheiro</option>
               </select>
+            </div>
+          </div>
+
+          <!-- Campos do Modo Financiamento -->
+          <div id="planFinancingFields" class="hidden space-y-3 p-3 rounded-xl bg-slate-950/60 border border-indigo-500/25">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <span class="text-[11px] font-semibold text-indigo-300 flex items-center gap-1.5">
+                <i class="fa-solid fa-landmark"></i>
+                <span>Condições do Financiamento</span>
+              </span>
+              <input type="hidden" id="planFinancingCalcByInput" value="rate" />
+              <div class="grid grid-cols-2 gap-1 p-0.5 bg-slate-900 border border-slate-800 rounded-lg">
+                <button type="button" data-plan-fin-calc="rate" class="plan-fin-calc-btn px-2.5 py-1 rounded-md text-[11px] font-semibold transition-smooth bg-indigo-600 text-white">
+                  Por taxa (%)
+                </button>
+                <button type="button" data-plan-fin-calc="installment" class="plan-fin-calc-btn px-2.5 py-1 rounded-md text-[11px] font-semibold transition-smooth text-slate-400 hover:text-white">
+                  Sei a parcela
+                </button>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label for="planFinancingMonthsInput" class="block text-xs font-medium text-slate-300 mb-1">Prazo (meses)</label>
+                <input type="number" id="planFinancingMonthsInput" min="1" max="420" step="1" value="48" class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-semibold text-sm focus:border-indigo-500 transition-colors" />
+                <div class="flex flex-wrap items-center gap-1 mt-1.5">
+                  <button type="button" data-plan-fin-months="12" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-medium text-slate-300 transition-colors">12x</button>
+                  <button type="button" data-plan-fin-months="24" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-medium text-slate-300 transition-colors">24x</button>
+                  <button type="button" data-plan-fin-months="36" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-medium text-slate-300 transition-colors">36x</button>
+                  <button type="button" data-plan-fin-months="48" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-medium text-slate-300 transition-colors">48x</button>
+                  <button type="button" data-plan-fin-months="60" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-medium text-slate-300 transition-colors">60x</button>
+                  <button type="button" data-plan-fin-months="72" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-medium text-slate-300 transition-colors">72x</button>
+                </div>
+              </div>
+
+              <div>
+                <label for="planFinancingDueDayInput" class="block text-xs font-medium text-slate-300 mb-1">Dia do vencimento (Conta Fixa)</label>
+                <input type="number" id="planFinancingDueDayInput" min="1" max="31" step="1" value="10" class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-semibold text-sm focus:border-indigo-500 transition-colors" />
+                <p class="text-[10px] text-slate-500 mt-1.5">Ao efetivar, cria uma Conta Fixa mensal com esse vencimento.</p>
+              </div>
+            </div>
+
+            <!-- Cálculo por Taxa de Juros -->
+            <div id="planFinancingRateFields" class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <div>
+                <label for="planInterestRateInput" class="block text-xs font-medium text-slate-300 mb-1">Taxa de juros (%)</label>
+                <input type="text" id="planInterestRateInput" inputmode="decimal" placeholder="Ex: 1,89" class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-semibold text-sm focus:border-indigo-500 transition-colors" />
+                <p class="text-[10px] text-slate-500 mt-1">Deixe 0 para simular sem juros.</p>
+              </div>
+
+              <div>
+                <label for="planInterestRateUnitSelect" class="block text-xs font-medium text-slate-300 mb-1">Periodicidade</label>
+                <select id="planInterestRateUnitSelect" class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 text-sm focus:border-indigo-500 transition-colors">
+                  <option value="monthly" selected>% ao mês (a.m.)</option>
+                  <option value="annual">% ao ano (a.a.)</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="planAmortizationSelect" class="block text-xs font-medium text-slate-300 mb-1">Sistema</label>
+                <select id="planAmortizationSelect" class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 text-sm focus:border-indigo-500 transition-colors">
+                  <option value="price" selected>Tabela Price (Fixa)</option>
+                  <option value="sac">SAC (Decrescente)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Cálculo por Parcela Proposta -->
+            <div id="planFinancingInstallmentFields" class="hidden space-y-1.5">
+              <label for="planFinancingInstallmentInput" class="block text-xs font-medium text-slate-300">Valor da parcela proposta (R$)</label>
+              <div class="relative">
+                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-semibold text-xs">R$</span>
+                <input type="text" id="planFinancingInstallmentInput" inputmode="numeric" placeholder="0,00" class="money-input w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-bold text-sm focus:border-indigo-500 transition-colors" />
+              </div>
+              <p class="text-[10px] text-slate-400">O FinFlow estima automaticamente a taxa de juros implícita, os juros totais e o custo final.</p>
             </div>
           </div>
 
@@ -1203,6 +1384,211 @@
 
       <div class="pt-4 mt-4 flex items-center justify-end border-t border-slate-700/60 flex-shrink-0">
         <button type="button" data-close-modal="planningModal" class="px-4 py-2 bg-slate-700/60 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold transition-colors">
+          Fechar
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 8. MODAL: CAIXINHAS E RESERVAS (DINHEIRO GUARDADO) -->
+  <div id="reservesModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="modal-backdrop fixed inset-0 bg-slate-950/80 backdrop-blur-sm modal-backdrop-animate"></div>
+    <div class="modal-content relative bg-slate-800 border border-slate-700 w-full max-w-2xl rounded-2xl shadow-2xl p-6 modal-content-animate z-10 flex flex-col max-h-[90vh]">
+
+      <div class="flex items-center justify-between pb-4 border-b border-slate-700 flex-shrink-0">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-teal-500/10 border border-teal-500/20 text-teal-400 flex items-center justify-center">
+            <i class="fa-solid fa-piggy-bank text-base"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-white text-base">Caixinhas e Reservas</h3>
+            <p class="text-xs text-slate-400">Gerencie dinheiro já guardado e novos aportes/resgates</p>
+          </div>
+        </div>
+        <button type="button" data-close-modal="reservesModal" class="text-slate-400 hover:text-white p-1 rounded-lg">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <div id="reservesModalBody" class="mt-4 flex-1 overflow-y-auto pr-1 space-y-5">
+
+        <!-- Resumo Total -->
+        <div class="p-3.5 rounded-xl bg-slate-900/70 border border-teal-500/20 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <span class="text-[11px] uppercase tracking-wider font-semibold text-slate-400 block">Patrimônio Total Guardado</span>
+            <span id="reservesModalTotal" class="text-xl font-bold text-teal-300">R$ 0,00</span>
+          </div>
+          <span class="text-[11px] text-slate-400 max-w-xs">
+            Saldo contínuo entre os meses — não soma como renda do mês.
+          </span>
+        </div>
+
+        <!-- Seletor de Aba: Movimentar vs Nova/Editar Caixinha -->
+        <div class="grid grid-cols-2 gap-2 p-1 bg-slate-950/80 border border-slate-800 rounded-xl">
+          <button type="button" data-reserve-tab="move" class="reserve-tab-btn px-3 py-2 rounded-lg text-xs font-semibold transition-smooth bg-teal-600 text-white shadow-sm flex items-center justify-center gap-1.5">
+            <i class="fa-solid fa-arrow-right-arrow-left"></i>
+            <span>Guardar / Resgatar</span>
+          </button>
+          <button type="button" data-reserve-tab="manage" class="reserve-tab-btn px-3 py-2 rounded-lg text-xs font-semibold transition-smooth text-slate-400 hover:text-white flex items-center justify-center gap-1.5">
+            <i class="fa-solid fa-folder-plus"></i>
+            <span>Nova Caixinha / Editar</span>
+          </button>
+        </div>
+
+        <!-- Painel 1: Movimentar Caixinha (+ Guardar / - Resgatar) -->
+        <div id="reserveMovePanel">
+          <form id="reserveMoveForm" class="p-4 rounded-xl bg-slate-900/60 border border-slate-700/70 space-y-3.5">
+            <input type="hidden" id="reserveOpTypeInput" value="deposit" />
+
+            <div class="grid grid-cols-2 gap-2 p-1 bg-slate-950/70 border border-slate-800 rounded-xl">
+              <button type="button" data-reserve-op="deposit" class="reserve-op-btn px-3 py-1.5 rounded-lg text-xs font-semibold transition-smooth bg-emerald-600 text-white shadow-sm flex items-center justify-center gap-1.5">
+                <i class="fa-solid fa-plus"></i>
+                <span>Guardar (Aporte)</span>
+              </button>
+              <button type="button" data-reserve-op="withdraw" class="reserve-op-btn px-3 py-1.5 rounded-lg text-xs font-semibold transition-smooth text-slate-400 hover:text-white flex items-center justify-center gap-1.5">
+                <i class="fa-solid fa-minus"></i>
+                <span>Resgatar (Uso)</span>
+              </button>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <div class="flex items-center justify-between mb-1">
+                  <label for="reserveMoveSelect" class="block text-xs font-medium text-slate-300">Qual caixinha?</label>
+                  <span id="reserveMoveSelectedBalance" class="text-[11px] font-semibold text-teal-300">Saldo: R$ 0,00</span>
+                </div>
+                <select id="reserveMoveSelect" class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 text-sm focus:border-teal-500 transition-colors">
+                  <!-- Preenchido via app.js -->
+                </select>
+              </div>
+
+              <div>
+                <label for="reserveMoveAmountInput" class="block text-xs font-medium text-slate-300 mb-1">Valor da movimentação (R$)</label>
+                <div class="relative">
+                  <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-semibold text-xs">R$</span>
+                  <input type="text" id="reserveMoveAmountInput" inputmode="numeric" placeholder="0,00" class="money-input w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-bold text-sm focus:border-teal-500 transition-colors" required />
+                </div>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label for="reserveMoveDateInput" class="block text-xs font-medium text-slate-300 mb-1">Data</label>
+                <input type="date" id="reserveMoveDateInput" class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 text-sm focus:border-teal-500 transition-colors" required />
+              </div>
+
+              <div>
+                <label for="reserveMoveNoteInput" class="block text-xs font-medium text-slate-300 mb-1">
+                  Observação <span class="text-slate-500 font-normal">(opcional)</span>
+                </label>
+                <input type="text" id="reserveMoveNoteInput" placeholder="Ex: Sobra do salário, rendimento..." class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 text-sm focus:border-teal-500 transition-colors" />
+              </div>
+            </div>
+
+            <label class="flex items-start gap-2.5 p-3 rounded-xl bg-slate-950/60 border border-slate-800 cursor-pointer">
+              <input type="checkbox" id="reserveMoveAffectMonthCheckbox" checked class="mt-0.5 rounded border-slate-600 bg-slate-900 text-teal-500 focus:ring-teal-500" />
+              <div>
+                <span id="reserveMoveAffectMonthLabel" class="block text-xs font-semibold text-slate-200">Abater do Saldo Restante deste mês</span>
+                <span id="reserveMoveAffectMonthHint" class="block text-[11px] text-slate-400 mt-0.5">
+                  Reduz a folga livre do mês para evitar gastar o que já foi guardado (sem contar como gasto diário).
+                </span>
+              </div>
+            </label>
+
+            <div class="flex items-center justify-end">
+              <button type="submit" id="reserveMoveSubmitBtn" class="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white rounded-xl text-xs font-semibold transition-smooth shadow-md shadow-emerald-600/20 flex items-center justify-center gap-1.5">
+                <i class="fa-solid fa-piggy-bank"></i>
+                <span>Confirmar Aporte</span>
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Painel 2: Criar ou Editar Caixinha -->
+        <div id="reserveManagePanel" class="hidden">
+          <form id="reserveForm" class="p-4 rounded-xl bg-slate-900/60 border border-slate-700/70 space-y-3.5">
+            <input type="hidden" id="reserveEditId" value="" />
+
+            <div class="flex items-center justify-between gap-2">
+              <h4 id="reserveFormTitle" class="text-xs font-bold uppercase tracking-wider text-slate-300">Nova Caixinha / Reserva</h4>
+              <button type="button" id="cancelReserveEditBtn" class="hidden text-xs font-medium text-slate-400 hover:text-white transition-colors">
+                Cancelar edição
+              </button>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label for="reserveTitleInput" class="block text-xs font-medium text-slate-300 mb-1">Nome da caixinha</label>
+                <input type="text" id="reserveTitleInput" placeholder="Ex: Reserva de Emergência, Nubank..." class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 text-sm focus:border-teal-500 transition-colors" required />
+              </div>
+
+              <div>
+                <label for="reserveTypeSelect" class="block text-xs font-medium text-slate-300 mb-1">Tipo / Onde fica guardado</label>
+                <select id="reserveTypeSelect" class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 text-sm focus:border-teal-500 transition-colors">
+                  <option value="Reserva de Emergência" selected>Reserva de Emergência</option>
+                  <option value="Caixinha / Conta Rende">Caixinha / Conta Rende</option>
+                  <option value="Poupança">Poupança</option>
+                  <option value="Investimentos / CDB">Investimentos / CDB</option>
+                  <option value="Dinheiro Físico">Dinheiro Físico</option>
+                  <option value="Objetivo / Sonho">Objetivo / Sonho</option>
+                  <option value="Outros">Outros</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label for="reserveBalanceInput" class="block text-xs font-medium text-slate-300 mb-1">
+                  Quanto já tem guardado (R$) <span class="text-slate-500 font-normal">(opcional)</span>
+                </label>
+                <div class="relative">
+                  <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-semibold text-xs">R$</span>
+                  <input type="text" id="reserveBalanceInput" inputmode="numeric" placeholder="0,00" class="money-input w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-bold text-sm focus:border-teal-500 transition-colors" />
+                </div>
+                <p id="reserveBalanceHint" class="text-[10px] text-slate-500 mt-1">
+                  Saldo já existente não altera a renda nem o saldo livre deste mês.
+                </p>
+              </div>
+
+              <div>
+                <label for="reserveGoalInput" class="block text-xs font-medium text-slate-300 mb-1">
+                  Meta da caixinha (R$) <span class="text-slate-500 font-normal">(opcional)</span>
+                </label>
+                <div class="relative">
+                  <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-semibold text-xs">R$</span>
+                  <input type="text" id="reserveGoalInput" inputmode="numeric" placeholder="0,00" class="money-input w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-semibold text-sm focus:border-teal-500 transition-colors" />
+                </div>
+                <p class="text-[10px] text-slate-500 mt-1">
+                  Deixe R$ 0,00 se não quiser barra de meta fixa.
+                </p>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-end">
+              <button type="submit" id="reserveSubmitBtn" class="w-full sm:w-auto px-4 py-2 bg-teal-600 hover:bg-teal-500 active:scale-95 text-white rounded-xl text-xs font-semibold transition-smooth shadow-md shadow-teal-600/20 flex items-center justify-center gap-1.5">
+                <i class="fa-solid fa-plus"></i>
+                <span>Criar Caixinha</span>
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Lista de Caixinhas e Histórico -->
+        <div class="space-y-2.5">
+          <div class="flex items-center justify-between">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400">Minhas Caixinhas</h4>
+            <span id="reservesCountBadge" class="px-2 py-0.5 text-[11px] font-semibold bg-slate-900 border border-slate-700 text-slate-300 rounded-full">0 caixinhas</span>
+          </div>
+          <div id="reservesListContainer" class="space-y-2.5">
+            <!-- Inserido dinamicamente via app.js -->
+          </div>
+        </div>
+
+      </div>
+
+      <div class="pt-4 mt-4 flex items-center justify-end border-t border-slate-700/60 flex-shrink-0">
+        <button type="button" data-close-modal="reservesModal" class="px-4 py-2 bg-slate-700/60 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold transition-colors">
           Fechar
         </button>
       </div>
