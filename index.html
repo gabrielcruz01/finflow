@@ -1841,7 +1841,7 @@
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
             <div id="goalSavePercentWrap">
               <label for="goalSavePercentInput" class="block text-[11px] font-medium text-slate-300 mb-1">Percentual da Renda (%)</label>
-              <input type="number" id="goalSavePercentInput" min="0" max="90" step="1" value="20" class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 text-sm font-semibold focus:border-teal-500 transition-colors" />
+              <input type="text" id="goalSavePercentInput" inputmode="decimal" placeholder="20" value="20" class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 text-sm font-semibold focus:border-teal-500 transition-colors" />
             </div>
             <div id="goalSaveFixedWrap" class="hidden">
               <label for="goalSaveValueInput" class="block text-[11px] font-medium text-slate-300 mb-1">Valor Mensal Fixo (R$)</label>
@@ -2015,7 +2015,7 @@
             </span>
             <div class="flex items-center gap-1 p-0.5 bg-slate-950 border border-slate-700 rounded-lg">
               <input type="hidden" id="debtStrategyInput" value="avalanche" />
-              <button type="button" data-debt-strategy="avalanche" class="debt-strategy-btn px-2.5 py-1 rounded text-[11px] font-semibold bg-rose-600 text-white transition-smooth">Avalanche (Menor Juro)</button>
+              <button type="button" data-debt-strategy="avalanche" class="debt-strategy-btn px-2.5 py-1 rounded text-[11px] font-semibold bg-rose-600 text-white transition-smooth">Avalanche (Maior Taxa)</button>
               <button type="button" data-debt-strategy="snowball" class="debt-strategy-btn px-2.5 py-1 rounded text-[11px] font-semibold text-slate-400 hover:text-white transition-smooth">Bola de Neve (Menor Saldo)</button>
             </div>
           </div>
@@ -2065,7 +2065,7 @@
             </div>
             <div>
               <label for="debtInterestInput" class="block text-[11px] font-medium text-slate-300 mb-1">Juros (% ao mês)</label>
-              <input type="number" id="debtInterestInput" min="0" max="100" step="0.1" placeholder="Ex: 8.5" class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 text-sm font-semibold focus:border-rose-500 transition-colors" />
+              <input type="text" id="debtInterestInput" inputmode="decimal" placeholder="Ex: 8,5" class="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 text-sm font-semibold focus:border-rose-500 transition-colors" />
             </div>
           </div>
 

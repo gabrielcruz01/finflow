@@ -113,7 +113,7 @@
      */
     formatCurrency(value) {
       const num = Number(value);
-      const safeNum = isNaN(num) ? 0 : num;
+      const safeNum = (!Number.isFinite(num) || Math.abs(num) < 0.005) ? 0 : num;
       return new Intl.NumberFormat('pt-BR', {
         style: 'currency',
         currency: 'BRL',
@@ -127,7 +127,7 @@
      */
     parseCurrency(input) {
       if (typeof input === 'number') {
-        return isNaN(input) ? 0 : input;
+        return Number.isFinite(input) ? Math.round(input * 100) / 100 : 0;
       }
       if (!input || typeof input !== 'string') {
         return 0;
@@ -135,15 +135,19 @@
 
       let sanitized = input.trim().replace(/[R$\s]/g, '');
 
-      // Trata padrões como "1.234,56" convertendo para "1234.56"
+      // Trata padrões como "1.234,56" ou milhares pt-BR sem vírgula ("1.234.567")
       if (sanitized.includes(',') && sanitized.includes('.')) {
         sanitized = sanitized.replace(/\./g, '').replace(',', '.');
       } else if (sanitized.includes(',')) {
         sanitized = sanitized.replace(',', '.');
+      } else if ((sanitized.match(/\./g) || []).length > 1) {
+        sanitized = sanitized.replace(/\./g, '');
       }
 
       const parsed = parseFloat(sanitized);
-      return isNaN(parsed) ? 0 : Math.round(parsed * 100) / 100;
+      if (!Number.isFinite(parsed)) return 0;
+      const rounded = Math.round(parsed * 100) / 100;
+      return Math.abs(rounded) < 0.005 ? 0 : rounded;
     },
 
     /**
@@ -162,6 +166,8 @@
         sanitized = sanitized.replace(/\./g, '').replace(',', '.');
       } else if (sanitized.includes(',')) {
         sanitized = sanitized.replace(',', '.');
+      } else if ((sanitized.match(/\./g) || []).length > 1) {
+        sanitized = sanitized.replace(/\./g, '');
       }
 
       const parsed = parseFloat(sanitized);
@@ -174,7 +180,7 @@
      */
     formatNumberToInput(val) {
       const num = Number(val);
-      if (isNaN(num) || num === 0) return '0,00';
+      if (!Number.isFinite(num) || Math.abs(num) < 0.005) return '0,00';
       return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     },
 
@@ -183,9 +189,11 @@
      */
     attachCurrencyMask(inputElement) {
       if (!inputElement) return;
+      if (inputElement.dataset && inputElement.dataset.currencyMaskAttached === '1') return;
+      if (inputElement.dataset) inputElement.dataset.currencyMaskAttached = '1';
 
       const formatValue = (rawDigits) => {
-        const digitsOnly = String(rawDigits).replace(/\D/g, '');
+        const digitsOnly = String(rawDigits).replace(/\D/g, '').slice(0, 12);
         if (!digitsOnly) return '0,00';
         const num = parseInt(digitsOnly, 10) / 100;
         return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -1135,8 +1143,9 @@
       this.state = Storage.load();
 
       this.cacheDOMElements();
-      this.bindEvents();
+      // IMPORTANTE: registrar máscaras ANTES dos listeners de preview para que e.target.value já chegue deslocado
       this.initCurrencyMasks();
+      this.bindEvents();
       this.registerServiceWorker();
       this.render();
 
@@ -2084,7 +2093,8 @@
     },
 
     getCurrentIncome(period = this.state.currentPeriod) {
-      return this.getPeriodIncomes(period).reduce((sum, entry) => sum + (entry.amount || 0), 0);
+      const total = this.getPeriodIncomes(period).reduce((sum, entry) => sum + (entry.amount || 0), 0);
+      return Math.round(total * 100) / 100;
     },
 
     openIncomeModal() {
@@ -2647,12 +2657,12 @@
         const periodBills = this.state.bills.filter(b => b.dueDate.startsWith(period));
         const periodExpenses = this.state.expenses.filter(e => e.date.startsWith(period));
 
-        const income = this.getCurrentIncome();
-        const billsTotal = periodBills.reduce((acc, b) => acc + (b.amount || 0), 0);
-        const expensesTotal = periodExpenses.reduce((acc, e) => acc + (e.amount || 0), 0);
+        const income = this.getCurrentIncome(period);
+        const billsTotal = Math.round(periodBills.reduce((acc, b) => acc + (b.amount || 0), 0) * 100) / 100;
+        const expensesTotal = Math.round(periodExpenses.reduce((acc, e) => acc + (e.amount || 0), 0) * 100) / 100;
         const reserveFlow = this.getPeriodReserveFlow(period);
         const totalReserves = this.getTotalReservesBalance();
-        const balance = income - billsTotal - expensesTotal - reserveFlow.netSavedInMonth;
+        const balance = Math.round((income - billsTotal - expensesTotal - reserveFlow.netSavedInMonth) * 100) / 100;
 
         // Inicia com BOM UTF-8 para garantir abertura perfeita no Microsoft Excel
         let csv = '\uFEFF';
@@ -2770,7 +2780,8 @@
         } else {
           annualMetrics.items.forEach(item => {
             const anualStr = item.amount.toFixed(2).replace('.', ',');
-            const provStr = (item.amount / 12).toFixed(2).replace('.', ',');
+            const provVal = Math.round((item.amount / 12) * 100) / 100;
+            const provStr = provVal.toFixed(2).replace('.', ',');
             csv += `"${item.title.replace(/"/g, '""')}";"${item.category}";"${MONTH_NAMES_PT[(item.dueMonth || 1) - 1]}";${anualStr};${provStr}\r\n`;
           });
         }
@@ -2925,11 +2936,11 @@
       const periodBills = this.state.bills.filter(b => b.dueDate.startsWith(period));
       const periodExpenses = this.state.expenses.filter(e => e.date.startsWith(period));
 
-      const income = this.getCurrentIncome();
-      const billsTotal = periodBills.reduce((acc, b) => acc + (b.amount || 0), 0);
+      const income = this.getCurrentIncome(period);
+      const billsTotal = Math.round(periodBills.reduce((acc, b) => acc + (b.amount || 0), 0) * 100) / 100;
       const billsPaid = periodBills.filter(b => b.paid).length;
       const billsPending = periodBills.length - billsPaid;
-      const expensesTotal = periodExpenses.reduce((acc, e) => acc + (e.amount || 0), 0);
+      const expensesTotal = Math.round(periodExpenses.reduce((acc, e) => acc + (e.amount || 0), 0) * 100) / 100;
       const reserveFlow = this.getPeriodReserveFlow(period);
 
       const balance = Math.round((income - billsTotal - expensesTotal - reserveFlow.netSavedInMonth) * 100) / 100;
@@ -3015,9 +3026,9 @@
       const periodBills = this.state.bills.filter(b => b.dueDate.startsWith(period));
       const periodExpenses = this.state.expenses.filter(e => e.date.startsWith(period));
 
-      const income = this.getCurrentIncome();
-      const billsTotal = periodBills.reduce((acc, b) => acc + (b.amount || 0), 0);
-      const expensesTotal = periodExpenses.reduce((acc, e) => acc + (e.amount || 0), 0);
+      const income = this.getCurrentIncome(period);
+      const billsTotal = Math.round(periodBills.reduce((acc, b) => acc + (b.amount || 0), 0) * 100) / 100;
+      const expensesTotal = Math.round(periodExpenses.reduce((acc, e) => acc + (e.amount || 0), 0) * 100) / 100;
       const reserveFlow = this.getPeriodReserveFlow(period);
       const balance = Math.round((income - billsTotal - expensesTotal - reserveFlow.netSavedInMonth) * 100) / 100;
 
@@ -3139,7 +3150,7 @@
       if (isInstallment && rawAmount > 0) {
         const count = Math.max(1, parseInt(this.expenseInstallmentCount?.value || '2', 10));
         const instType = this.expenseForm?.querySelector('input[name="installmentAmountType"]:checked')?.value || 'per_installment';
-        addedImpact = instType === 'total' ? (rawAmount / count) : rawAmount;
+        addedImpact = instType === 'total' ? this.computeInstallmentBreakdown(rawAmount, count).firstAmount : rawAmount;
       }
 
       let existingOtherSpent = [
@@ -3149,15 +3160,22 @@
 
       existingOtherSpent = Math.round(existingOtherSpent * 100) / 100;
       const projectedTotal = Math.round((existingOtherSpent + addedImpact) * 100) / 100;
+      const overflowAmount = Math.round((projectedTotal - limit) * 100) / 100;
       const pct = Math.round((projectedTotal / limit) * 100);
       const remainingBefore = Math.round((limit - existingOtherSpent) * 100) / 100;
 
       this.expenseBudgetPreview.classList.remove('hidden');
-      if (pct >= 100) {
+      if (overflowAmount > 0) {
         this.expenseBudgetPreview.className = 'p-2.5 rounded-xl border border-rose-500/35 bg-rose-500/10 text-rose-200 text-[11px] flex items-center gap-2';
         this.expenseBudgetPreview.innerHTML = `
           <i class="fa-solid fa-triangle-exclamation text-rose-400 flex-shrink-0"></i>
-          <span>Teto de <strong>${Utils.escapeHTML(cat)}</strong> (${Utils.formatCurrency(limit)}): ficará em <strong>${Utils.formatCurrency(projectedTotal)}</strong> (${pct}% — acima em ${Utils.formatCurrency(projectedTotal - limit)}).</span>
+          <span>Teto de <strong>${Utils.escapeHTML(cat)}</strong> (${Utils.formatCurrency(limit)}): ficará em <strong>${Utils.formatCurrency(projectedTotal)}</strong> (${pct}% — acima em ${Utils.formatCurrency(overflowAmount)}).</span>
+        `;
+      } else if (overflowAmount === 0) {
+        this.expenseBudgetPreview.className = 'p-2.5 rounded-xl border border-amber-500/35 bg-amber-500/10 text-amber-200 text-[11px] flex items-center gap-2';
+        this.expenseBudgetPreview.innerHTML = `
+          <i class="fa-solid fa-bullseye text-amber-400 flex-shrink-0"></i>
+          <span>Atenção no teto de <strong>${Utils.escapeHTML(cat)}</strong>: atingirá exatamente <strong>100%</strong> (${Utils.formatCurrency(limit)}).</span>
         `;
       } else if (pct >= 80) {
         this.expenseBudgetPreview.className = 'p-2.5 rounded-xl border border-amber-500/35 bg-amber-500/10 text-amber-200 text-[11px] flex items-center gap-2';
@@ -3211,7 +3229,8 @@
       categoriesWithBudget.forEach(cat => {
         const cfg = this.getBudgetConfig(cat, period);
         const limit = cfg.limit;
-        const spent = spentByCategory[cat] || 0;
+        const spent = Math.round((spentByCategory[cat] || 0) * 100) / 100;
+        const overflow = Math.round((spent - limit) * 100) / 100;
         const percent = limit > 0 ? Math.round((spent / limit) * 100) : (spent > 0 ? 100 : 0);
         const icon = CATEGORY_ICONS[cat] || 'fa-tags';
         const color = CATEGORY_COLORS[cat] || '#64748b';
@@ -3224,10 +3243,14 @@
           statusClass = 'status-pill-soon';
           statusText = 'Sem renda no mês';
           barColor = '#64748b';
-        } else if (percent >= 100) {
+        } else if (overflow > 0) {
           statusClass = 'status-pill-overdue';
-          statusText = `Estourado (+${Utils.formatCurrency(spent - limit)})`;
+          statusText = `Estourado (+${Utils.formatCurrency(overflow)})`;
           barColor = '#f43f5e';
+        } else if (overflow === 0 && limit > 0) {
+          statusClass = 'status-pill-soon';
+          statusText = 'No limite (100%)';
+          barColor = '#f59e0b';
         } else if (percent >= 80) {
           statusClass = 'status-pill-soon';
           statusText = `Atenção (${percent}%)`;
@@ -3275,7 +3298,7 @@
         ? (rawVal > 0 ? String(rawVal) : '')
         : (rawVal > 0 ? Utils.formatNumberToInput(rawVal) : '0,00');
       const convertedBrl = isPercent && rawVal > 0
-        ? `= ${Utils.formatCurrency(income * (rawVal / 100))}/mês`
+        ? (income > 0 ? `= ${Utils.formatCurrency(Math.round((income * (rawVal / 100)) * 100) / 100)}/mês` : 'Sem renda no mês p/ calcular em R$')
         : '';
 
       return `
@@ -3313,9 +3336,11 @@
       if (!modeInput || !valueInput || !previewEl) return;
 
       if (modeInput.value === 'percent') {
-        const pct = Utils.parsePercent(valueInput.value || '0');
+        const pct = Math.min(100, Math.max(0, Utils.parsePercent(valueInput.value || '0')));
         const income = this.getCurrentIncome(this.state.currentPeriod);
-        previewEl.textContent = pct > 0 ? `= ${Utils.formatCurrency(income * (pct / 100))}/mês` : '';
+        previewEl.textContent = pct > 0
+          ? (income > 0 ? `= ${Utils.formatCurrency(Math.round((income * (pct / 100)) * 100) / 100)}/mês` : 'Sem renda no mês p/ calcular em R$')
+          : '';
       } else {
         previewEl.textContent = '';
       }
@@ -3335,16 +3360,17 @@
         const income = this.getCurrentIncome(this.state.currentPeriod);
         if (normalized === 'percent') {
           const brl = Utils.parseCurrency(valueInput.value || '0');
-          const pct = income > 0 && brl > 0 ? Math.min(100, Math.round((brl / income) * 1000) / 10) : 0;
+          const pct = income > 0 && brl > 0 ? Math.min(100, Math.round((brl / income) * 10000) / 100) : 0;
           valueInput.value = pct > 0 ? String(pct) : '';
         } else {
-          const pct = Utils.parsePercent(valueInput.value || '0');
+          const pct = Math.min(100, Math.max(0, Utils.parsePercent(valueInput.value || '0')));
           const brl = income > 0 && pct > 0 ? Math.round((income * (pct / 100)) * 100) / 100 : 0;
           valueInput.value = Utils.formatNumberToInput(brl);
         }
       }
 
       modeInput.value = normalized;
+      valueInput.classList.toggle('money-input', normalized === 'fixed');
       if (prefixEl) prefixEl.textContent = normalized === 'percent' ? '%' : 'R$';
       valueInput.placeholder = normalized === 'percent' ? '0' : '0,00';
 
@@ -3698,6 +3724,21 @@
         ? Math.round(safeRate * 100) / 100
         : Math.round(((Math.pow(1 + monthlyRate, 12) - 1) * 100) * 100) / 100;
 
+      if (monthlyRate === 0) {
+        const { baseAmount, firstAmount } = this.computeInstallmentBreakdown(safePrincipal, safeMonths);
+        const schedule = Array.from({ length: safeMonths }, (_, idx) => (idx === 0 ? firstAmount : baseAmount));
+        return {
+          schedule,
+          monthlyRate: 0,
+          monthlyRatePct: 0,
+          annualRatePct: 0,
+          monthlyImpact: safeMonths === 1 ? firstAmount : (amortizationType === 'sac' ? firstAmount : baseAmount),
+          firstInstallmentAmount: firstAmount,
+          lastInstallmentAmount: baseAmount,
+          totalInstallmentsSum: safePrincipal
+        };
+      }
+
       if (amortizationType === 'sac') {
         const amort = safePrincipal / safeMonths;
         const schedule = [];
@@ -3716,21 +3757,6 @@
           firstInstallmentAmount: schedule[0] || 0,
           lastInstallmentAmount: schedule[schedule.length - 1] || 0,
           totalInstallmentsSum
-        };
-      }
-
-      if (monthlyRate === 0) {
-        const { baseAmount, firstAmount } = this.computeInstallmentBreakdown(safePrincipal, safeMonths);
-        const schedule = Array.from({ length: safeMonths }, (_, idx) => (idx === 0 ? firstAmount : baseAmount));
-        return {
-          schedule,
-          monthlyRate: 0,
-          monthlyRatePct: 0,
-          annualRatePct: 0,
-          monthlyImpact: safeMonths === 1 ? firstAmount : baseAmount,
-          firstInstallmentAmount: firstAmount,
-          lastInstallmentAmount: baseAmount,
-          totalInstallmentsSum: safePrincipal
         };
       }
 
@@ -6472,7 +6498,7 @@
       });
 
       const all = [...overdue, ...dueToday, ...upcoming];
-      const totalAmount = all.reduce((sum, item) => sum + (item.bill.amount || 0), 0);
+      const totalAmount = Math.round(all.reduce((sum, item) => sum + (item.bill.amount || 0), 0) * 100) / 100;
 
       return { overdue, dueToday, upcoming, all, totalAmount, daysBefore };
     },
@@ -7051,9 +7077,10 @@
       [...periodExpenses, ...periodBills].forEach(item => {
         const cat = item.category || 'Outros';
         const val = item.amount || 0;
-        categoryTotals[cat] = (categoryTotals[cat] || 0) + val;
+        categoryTotals[cat] = Math.round(((categoryTotals[cat] || 0) + val) * 100) / 100;
         totalGastos += val;
       });
+      totalGastos = Math.round(totalGastos * 100) / 100;
 
       ChartManager.render(categoryTotals);
 
@@ -7131,14 +7158,17 @@
         }
       }
 
-      // Detalhamento por Métodos de Pagamento
+      // Detalhamento por Métodos de Pagamento (base: Gastos Diários)
       if (this.methodsBreakdownContainer) {
         const methodTotals = {};
+        let totalExpensesForMethods = 0;
         periodExpenses.forEach(exp => {
           const method = exp.method || 'Outros';
           const val = exp.amount || 0;
-          methodTotals[method] = (methodTotals[method] || 0) + val;
+          methodTotals[method] = Math.round(((methodTotals[method] || 0) + val) * 100) / 100;
+          totalExpensesForMethods += val;
         });
+        totalExpensesForMethods = Math.round(totalExpensesForMethods * 100) / 100;
 
         const sortedMethods = Object.entries(methodTotals).sort((a, b) => b[1] - a[1]);
 
@@ -7151,7 +7181,7 @@
         } else {
           let methodsHtml = '';
           sortedMethods.forEach(([method, amount]) => {
-            const percent = totalGastos > 0 ? Math.round((amount / totalGastos) * 100) : 0;
+            const percent = totalExpensesForMethods > 0 ? Math.round((amount / totalExpensesForMethods) * 100) : 0;
             const icon = METHOD_ICONS[method] || 'fa-money-bill text-slate-400';
 
             methodsHtml += `
@@ -7162,7 +7192,7 @@
                 </div>
                 <div class="text-right">
                   <div class="font-semibold text-slate-200">${Utils.formatCurrency(amount)}</div>
-                  <div class="text-[10px] text-slate-400">${percent}% dos gastos</div>
+                  <div class="text-[10px] text-slate-400">${percent}% dos gastos diários</div>
                 </div>
               </div>
             `;
@@ -7290,13 +7320,19 @@
       const currentBillsTotal = Math.round((structuralBills + financingBills) * 100) / 100;
 
       const byMonth = {};
+      const regularByMonth = {};
       allBills.forEach(b => {
         const p = (b.dueDate || '').slice(0, 7);
         if (/^\d{4}-\d{2}$/.test(p)) {
-          byMonth[p] = (byMonth[p] || 0) + (b.amount || 0);
+          byMonth[p] = Math.round(((byMonth[p] || 0) + (b.amount || 0)) * 100) / 100;
+          if (!b.financingPlanId) {
+            regularByMonth[p] = (regularByMonth[p] || 0) + 1;
+          }
         }
       });
-      const monthValues = Object.values(byMonth);
+      const regularMonthKeys = Object.keys(regularByMonth);
+      const refMonthKeys = regularMonthKeys.length > 0 ? regularMonthKeys : Object.keys(byMonth);
+      const monthValues = refMonthKeys.map(k => byMonth[k]);
       const historicalBillsAvg = monthValues.length > 0
         ? Math.round((monthValues.reduce((s, v) => s + v, 0) / monthValues.length) * 100) / 100
         : 0;
@@ -7345,7 +7381,7 @@
       const progressPct = targetAmount > 0 ? Math.min(100, Math.round((savedInMonth / targetAmount) * 100)) : 0;
       const goalPctOfIncome = goals.saveGoalMode === 'percent'
         ? goals.saveGoalValue
-        : (income > 0 ? Math.round((targetAmount / income) * 100) : 0);
+        : (income > 0 ? Math.round((targetAmount / income) * 1000) / 10 : 0);
 
       return {
         mode: goals.saveGoalMode,
@@ -7541,11 +7577,17 @@
         this.healthSaveGoalPctBadge.textContent = `${savings.progressPct}%`;
       }
       if (this.healthSaveGoalSub) {
-        this.healthSaveGoalSub.textContent = savings.targetAmount > 0
-          ? (savings.progressPct >= 100
-            ? `Meta mensal (${savings.goalPctOfIncome}%) atingida!`
-            : `Falta separar ${Utils.formatCurrency(Math.max(0, savings.targetAmount - savings.savedInMonth))} neste mês`)
-          : 'Configure sua meta em Metas & Emergência';
+        if (savings.targetAmount > 0) {
+          if (savings.progressPct >= 100) {
+            this.healthSaveGoalSub.textContent = (savings.income > 0 || savings.mode === 'percent')
+              ? `Meta mensal (${savings.goalPctOfIncome}%) atingida!`
+              : `Meta mensal (${Utils.formatCurrency(savings.targetAmount)}) atingida!`;
+          } else {
+            this.healthSaveGoalSub.textContent = `Falta separar ${Utils.formatCurrency(Math.max(0, Math.round((savings.targetAmount - savings.savedInMonth) * 100) / 100))} neste mês`;
+          }
+        } else {
+          this.healthSaveGoalSub.textContent = 'Configure sua meta em Metas & Emergência';
+        }
       }
       if (this.healthSaveGoalBar) {
         this.healthSaveGoalBar.style.width = `${savings.progressPct}%`;
@@ -7630,12 +7672,25 @@
     // ========================================================================
     openGoalsModal() {
       const goals = Storage.normalizeFinanceGoals(this.state.financeGoals);
-      this.setGoalSaveMode(goals.saveGoalMode, false);
-      if (goals.saveGoalMode === 'percent' && this.goalSavePercentInput) {
-        this.goalSavePercentInput.value = String(goals.saveGoalValue || 20);
-      } else if (this.goalSaveValueInput) {
-        this.goalSaveValueInput.value = Utils.formatNumberToInput(goals.saveGoalValue || 0);
+      const income = this.getCurrentIncome(this.state.currentPeriod);
+      const savedVal = Number.isFinite(goals.saveGoalValue)
+        ? goals.saveGoalValue
+        : (goals.saveGoalMode === 'percent' ? 20 : 0);
+
+      if (this.goalSavePercentInput) {
+        const pctVal = goals.saveGoalMode === 'percent'
+          ? savedVal
+          : (income > 0 && savedVal > 0 ? Math.min(90, Math.round((savedVal / income) * 1000) / 10) : 20);
+        this.goalSavePercentInput.value = String(pctVal);
       }
+      if (this.goalSaveValueInput) {
+        const fixedVal = goals.saveGoalMode === 'fixed'
+          ? savedVal
+          : (income > 0 && savedVal > 0 ? Math.round((income * (savedVal / 100)) * 100) / 100 : 0);
+        this.goalSaveValueInput.value = Utils.formatNumberToInput(fixedVal);
+      }
+
+      this.setGoalSaveMode(goals.saveGoalMode, false);
       this.setGoalEmergencyMonths(goals.emergencyMonths, false);
       this.updateGoalsModalPreviews();
       this.openModal(this.goalsModal);
@@ -7643,6 +7698,21 @@
 
     setGoalSaveMode(mode, refresh = true) {
       const normalized = mode === 'fixed' ? 'fixed' : 'percent';
+      const prevMode = this.goalSaveModeInput?.value === 'fixed' ? 'fixed' : 'percent';
+      if (refresh && prevMode !== normalized) {
+        const income = this.getCurrentIncome(this.state.currentPeriod);
+        if (income > 0) {
+          if (normalized === 'fixed' && this.goalSaveValueInput) {
+            const pct = Math.min(90, Math.max(0, Utils.parsePercent(this.goalSavePercentInput?.value || '0')));
+            const equivBrl = Math.round((income * (pct / 100)) * 100) / 100;
+            this.goalSaveValueInput.value = Utils.formatNumberToInput(equivBrl);
+          } else if (normalized === 'percent' && this.goalSavePercentInput) {
+            const brl = Utils.parseCurrency(this.goalSaveValueInput?.value || '0');
+            const equivPct = brl > 0 ? Math.min(90, Math.round((brl / income) * 1000) / 10) : 0;
+            this.goalSavePercentInput.value = String(equivPct);
+          }
+        }
+      }
       if (this.goalSaveModeInput) this.goalSaveModeInput.value = normalized;
       this.goalModeBtns.forEach(btn => {
         const active = btn.getAttribute('data-goal-mode') === normalized;
@@ -7677,11 +7747,16 @@
         ? Utils.parseCurrency(this.goalSaveValueInput?.value || '0')
         : Math.min(90, Math.max(0, Utils.parsePercent(this.goalSavePercentInput?.value || '0')));
       const monthlyTarget = mode === 'fixed' ? val : Math.round((income * (val / 100)) * 100) / 100;
+      const annualTarget = Math.round((monthlyTarget * 12) * 100) / 100;
 
       if (this.goalSaveLivePreview) {
-        this.goalSaveLivePreview.innerHTML = income > 0
-          ? `Com renda atual de <strong>${Utils.formatCurrency(income)}</strong>, sua meta mensal é guardar <strong class="text-teal-300">${Utils.formatCurrency(monthlyTarget)}/mês</strong> (em 12 meses: <strong>${Utils.formatCurrency(monthlyTarget * 12)}</strong>).`
-          : `Meta configurada: <strong class="text-teal-300">${mode === 'percent' ? `${val}% da renda` : `${Utils.formatCurrency(val)}/mês`}</strong>.`;
+        if (income > 0) {
+          const sharePct = mode === 'fixed' ? Math.round((monthlyTarget / income) * 1000) / 10 : val;
+          const pctNote = (mode === 'fixed' && monthlyTarget > 0) ? ` (${String(sharePct).replace('.', ',')}% da renda)` : '';
+          this.goalSaveLivePreview.innerHTML = `Com renda atual de <strong>${Utils.formatCurrency(income)}</strong>, sua meta mensal é guardar <strong class="text-teal-300">${Utils.formatCurrency(monthlyTarget)}/mês</strong>${pctNote} (em 12 meses: <strong>${Utils.formatCurrency(annualTarget)}</strong>).`;
+        } else {
+          this.goalSaveLivePreview.innerHTML = `Meta configurada: <strong class="text-teal-300">${mode === 'percent' ? `${val}% da renda` : `${Utils.formatCurrency(val)}/mês`}</strong>.`;
+        }
       }
 
       if (this.goalEmergencyPreview) {
@@ -7924,8 +7999,9 @@
       let html = '';
       metrics.items.forEach(item => {
         const monthlyPart = Math.round((item.amount / 12) * 100) / 100;
-        const diffMonths = (item.dueMonth - curMonth + 12) % 12 || 12;
+        const diffMonths = (item.dueMonth - curMonth + 12) % 12;
         const monthName = MONTH_NAMES_PT[(item.dueMonth || 1) - 1] || 'Janeiro';
+        const dueLabel = diffMonths === 0 ? `${monthName} (este mês)` : `${monthName} (em ${diffMonths}m)`;
         const alreadySavedThisMonth = item.lastDepositedPeriod === this.state.currentPeriod;
 
         html += `
@@ -7934,7 +8010,7 @@
               <div>
                 <div class="flex items-center gap-2 flex-wrap">
                   <span class="text-xs font-bold text-slate-100">${Utils.escapeHTML(item.title)}</span>
-                  <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-sky-500/15 text-sky-300 border border-sky-500/30">${monthName} (em ${diffMonths}m)</span>
+                  <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-sky-500/15 text-sky-300 border border-sky-500/30">${dueLabel}</span>
                   <span class="px-2 py-0.5 rounded-full text-[10px] bg-slate-800 text-slate-300 border border-slate-700">${Utils.escapeHTML(item.category)}</span>
                 </div>
                 <p class="text-[11px] text-slate-400 mt-1">
@@ -8143,10 +8219,12 @@
       const strategy = this.state.debtStrategy || 'avalanche';
       const evalCurrent = this.evaluateDebtStrategy(debts, strategy, 0);
       const income = this.getCurrentIncome(period);
-      const financingMonthly = (this.state.bills || [])
-        .filter(b => (b.dueDate || '').startsWith(period) && b.financingPlanId)
-        .reduce((s, b) => s + (b.amount || 0), 0);
-      const totalBurden = evalCurrent.totalMonthlyMin + financingMonthly;
+      const financingMonthly = Math.round(
+        (this.state.bills || [])
+          .filter(b => (b.dueDate || '').startsWith(period) && b.financingPlanId)
+          .reduce((s, b) => s + (b.amount || 0), 0) * 100
+      ) / 100;
+      const totalBurden = Math.round((evalCurrent.totalMonthlyMin + financingMonthly) * 100) / 100;
       const burdenPct = income > 0 ? Math.round((totalBurden / income) * 100) : 0;
 
       if (this.debtsSummaryBanner) {
